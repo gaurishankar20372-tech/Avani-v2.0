@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for:\n1. Dual-Path Real Mobile App Launcher: Prioritizes launching native Android device apps via Android Intents/Deep links (vnd.youtube://, whatsapp://, intent:// schemes), with instant seamless fallback to on-screen interactive viewports if running in browser/desktop or app is not installed.\n2. Auto-Mute Call & Conversation Detector: Automatically mutes speech, pauses microphone processing, and enters 'CALL_MUTED' mode during phone calls or active conversation, with automatic smooth reactivation back to 'LISTENING' when the call or conversation finishes.",
+  "updatedAt":  "2026-11-07T12:04:42.311676790Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}
