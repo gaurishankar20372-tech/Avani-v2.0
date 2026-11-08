@@ -89,20 +89,20 @@ Your Personality & Tone:
 // Function declarations for Android native device actions
 const openAppTool: FunctionDeclaration = {
   name: "openApp",
-  description: "Launch any installed application on the user's Android phone such as YouTube, Instagram, WhatsApp, Spotify, Camera, Calculator, Settings, Maps, Chrome, or Gallery.",
+  description: "Launch ANY installed application on the user's Android phone (e.g. YouTube, WhatsApp, Instagram, Camera, Calculator, Settings, Gallery, PhonePe, Paytm, Google Pay, Zomato, Swiggy, Flipkart, Amazon, Hotstar, JioCinema, Truecaller, or ANY special/custom app).",
   parameters: {
     type: Type.OBJECT,
     properties: {
-      packageName: {
-        type: Type.STRING,
-        description: "The Android package name (e.g. com.google.android.youtube, com.instagram.android, com.whatsapp, com.spotify.music, com.android.calculator2, com.google.android.apps.maps, com.android.camera).",
-      },
       appName: {
         type: Type.STRING,
-        description: "The user-friendly name of the app (e.g. YouTube, Instagram, WhatsApp, Spotify, Calculator, Maps).",
+        description: "The name of the app to launch (e.g. YouTube, WhatsApp, Camera, Calculator, Settings, Zomato, Swiggy, Flipkart, Free Fire, etc.).",
+      },
+      packageName: {
+        type: Type.STRING,
+        description: "Optional Android package name if known (e.g. com.google.android.youtube, com.whatsapp, com.android.camera).",
       },
     },
-    required: ["packageName", "appName"],
+    required: ["appName"],
   },
 };
 

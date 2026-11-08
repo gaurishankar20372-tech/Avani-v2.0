@@ -37,16 +37,16 @@ export const CallMutedStatusBar: React.FC<CallMutedStatusBarProps> = ({
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold uppercase tracking-wider text-amber-400 font-mono flex items-center gap-1.5">
                 <VolumeX className="w-3.5 h-3.5" />
-                कॉल जारी • अवनी म्यूट है
+                कॉल चालू • प्राइवेसी शील्ड (माइक बंद)
               </span>
               <span className="text-[11px] font-mono text-slate-400 tabular-nums bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-700/50">
                 {formatDuration(callState.durationSeconds)}
               </span>
             </div>
             <p className="text-xs text-slate-300 truncate font-medium mt-0.5">
-              {callState.contactName || "फ़ोन बातचीत"}{" "}
-              <span className="text-slate-400 text-[11px]">
-                (कॉल खत्म होते ही अवनी तुरंत सक्रिय होगी)
+              {callState.contactName || "फ़ोन कॉल"}{" "}
+              <span className="text-emerald-400 text-[11px] font-mono">
+                • 100% प्राइवेट (माइक पूरी तरह बंद)
               </span>
             </p>
           </div>

@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for:\n1. Dual-Path Real Mobile App Launcher: Prioritizes launching native Android device apps via Android Intents/Deep links (vnd.youtube://, whatsapp://, intent:// schemes), with instant seamless fallback to on-screen interactive viewports if running in browser/desktop or app is not installed.\n2. Auto-Mute Call & Conversation Detector: Automatically mutes speech, pauses microphone processing, and enters 'CALL_MUTED' mode during phone calls or active conversation, with automatic smooth reactivation back to 'LISTENING' when the call or conversation finishes.",
-  "updatedAt":  "2026-11-07T12:04:42.311676790Z",
+  "summary":  "Implementation plan for:\n1. Zero-Click Real Mobile App Launching: Directly launches the native Android phone app via Android Intent URIs on voice command without opening the in-app screen overlay, while keeping Avani running in the background.\n2. Ultra Shield Relocation: Relocates the Ultra Shield / Noise Isolation control from the top bar into the three-dots dropdown menu to maintain a clean header.\n3. Call Privacy & Complete Audio Cut: Completely disconnects microphone audio streaming and speech synthesis during phone calls to guarantee zero surveillance / privacy during personal calls, automatically resuming hands-free when the call ends.\n4. Comprehensive Voice Phone Control Suite: Full Hindi/English voice control for native device apps and utilities.",
+  "updatedAt":  "2026-11-07T14:58:25.251727847Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

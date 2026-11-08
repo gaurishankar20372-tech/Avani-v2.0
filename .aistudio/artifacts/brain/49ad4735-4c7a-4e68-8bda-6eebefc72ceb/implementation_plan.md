@@ -1,31 +1,37 @@
-# Real Mobile App Launcher & Call Auto-Mute Intelligence
+# Direct Native Mobile App Launch & Call Privacy Protection
 
 ## Summary
-Enable Avani to launch real native Android mobile apps directly on the user's phone via Android Intent and Deep Link schemes (falling back gracefully to the interactive in-app viewport if the app is not installed or when previewed on desktop). In addition, implement an intelligent Call & Conversation Auto-Mute system that silences Avani completely during phone calls or conversations, and automatically resumes listening as soon as the call ends.
+Transform Avani's voice command execution so that saying *"YouTube खोलो"*, *"WhatsApp खोलो"*, or any app command directly opens the real native Android mobile app on the user's phone with zero clicks (eliminating the in-app modal overlay). Keep Avani operating in the background for continuous hands-free voice control. Relocate the Ultra Shield control into the three-dots menu for an uncluttered header, and enforce strict call privacy by completely severing microphone streaming during phone calls until the call finishes.
 
 ---
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following two architectural decisions were confirmed with the user via clarifying questions:
+> The following decisions were confirmed by the user in Phase 1:
 
-- **Confirmed Decision 1 (Real Mobile App Launch)**: Attempt to open the real mobile app installed on the device first using Android Intent URIs and deep link protocols (`intent://`, `vnd.youtube://`, `whatsapp://`, `tel:`, etc.). If the app is not installed on the device or the browser restricts intent execution, immediately display the on-screen interactive screen with a 1-tap "फोन के रियल ऐप में खोलें" (Open in Real Phone App) launch action.
-- **Confirmed Decision 2 (Call & Conversation Auto-Mute)**: When a phone call is active or conversation is detected, Avani will completely mute her voice and pause processing. As soon as the call or conversation finishes, Avani will automatically reactivate herself and resume continuous listening mode.
+- **Confirmed Decision 1 (Real App Launching)**: Real mobile phone apps will open directly via Android Intent URIs on voice command. The in-app modal overlay will NOT pop up or hijack the screen. Avani will remain active in the background.
+- **Confirmed Decision 2 (Call Privacy)**: During phone calls, Avani will completely mute audio output and stop microphone transmission for total conversation privacy. Avani will automatically resume listening once the call concludes.
+- **Confirmed Decision 3 (Header Cleanliness)**: The Ultra Shield / Noise Isolation button will be removed from the top bar and placed cleanly inside the three-dots (More Options) dropdown menu.
 
 ---
 
 ## 1. Overview & Core Concept
 
 ### What It Does
-1. **Real Native Mobile App Launcher (`NativeAppIntentLauncher`)**:
-   - When the user says *"YouTube खोलो"*, *"WhatsApp खोलो"*, *"कैमरा खोलो"*, *"कैलकुलेटर खोलो"*, *"कॉल लगाओ"*, *"गूगल मैप्स खोलो"*, or *"सेटिंग्स खोलो"*, Avani triggers the real native Android Intent URI scheme on the device.
-   - If running on a smartphone, the actual Android app opens directly.
-   - If running on desktop, web sandbox, or if the package is missing, Avani falls back to the in-app interactive viewport with full controls.
-2. **Intelligent Call & Conversation Auto-Muter (`CallAutoMuterEngine`)**:
-   - Detects active phone calls (via `tel:`, dialer intents, browser focus/visibility state during phone calls, and two-way background conversation patterns).
-   - Instantly mutes all speech synthesis, stops active Gemini Live playback, and displays a clean indicator: `"कॉल जारी है — अवनी शांत है"` (Call in progress — Avani is muted).
-   - As soon as the phone call ends (or user returns to app), Avani automatically wakes up, says *"कॉल समाप्त हो गई है, मैं तैयार हूँ!"*, and re-enters continuous listening mode without needing any manual button clicks.
+1. **Direct Native Android App Dispatch (`DirectRealAppLauncher`)**:
+   - When the user gives a voice command (e.g. *"YouTube खोलो"*, *"कैमरा खोलो"*, *"WhatsApp खोलो"*, *"कैलकुलेटर खोलो"*), Avani speaks immediate confirmation (*"लीजिए, यूट्यूब खोल दिया है!"*) and directly dispatches the real Android Intent URI to the operating system (`window.location.assign(intentUri)` / native deep link).
+   - The phone's actual installed application takes over the screen immediately without needing any user taps or showing an emulator modal.
+   - Avani's background service stays alive so the user can continue issuing voice commands anytime.
+2. **Call Privacy Shield (`CallPrivacyEngine`)**:
+   - When a call begins (via voice command *"राहुल को कॉल लगाओ"* or dialer intent dispatch), Avani triggers a total privacy lock:
+     - Speech synthesis is immediately cancelled (`window.speechSynthesis.cancel()`).
+     - Gemini Live audio is interrupted (`liveAudio.interrupt()`).
+     - Microphone capture is gated/disconnected (`liveAudio.stopInputCapture()`) so that zero audio from the private phone call is processed or sent over the network.
+   - Once the call is ended, Avani smoothly re-engages the microphone, says *"कॉल समाप्त हो गई है, मैं सुन रही हूँ!"*, and returns to continuous hands-free listening.
+3. **Streamlined Minimal Header**:
+   - The top bar retains only the sleek Avani 2.O Live branding and Chat Mode trigger.
+   - The Ultra Shield / Voice Isolation switcher is housed in the three-dots menu with clear status indicators (*Ultra Shield - Active*).
 
 ---
 
@@ -37,45 +43,61 @@ Enable Avani to launch real native Android mobile apps directly on the user's ph
 [ User Voice Command: "YouTube खोलो" ]
                 │
                 ▼
-[ Mobile Intent Attempt (vnd.youtube:// or Intent URI) ]
-      ├── Phone has YouTube Installed ──► [ Real Native YouTube App Opens ]
-      └── Desktop / Browser Sandbox ───► [ In-App Interactive Viewport Opens ]
-                                            + "रियल ऐप में खोलें" Button
-
-[ User Phone Call or Conversation Begins ]
+[ Avani Speaks: "लीजिए, यूट्यूब खोल दिया है!" ]
                 │
                 ▼
-[ Avani Enters "CALL_MUTED" State ]
-      ├── Audio Synthesis Cancelled (0ms Latency)
-      ├── Live Audio Stream Suspended
-      └── Calm Amber Call Banner: "कॉल जारी है — अवनी म्यूट है"
+[ Direct Android OS Intent Dispatch (vnd.youtube:// or Intent URI) ]
                 │
-[ Call Finishes / User Returns ]
+                ▼
+[ Phone's Real Native YouTube App Launches Immediately ]
+(No In-App Modal Overlay — Avani remains ready in background)
+
+─────────────────────────────────────────────────────────────
+
+[ User Voice Command: "राहुल को कॉल लगाओ" ]
+                │
+                ▼
+[ Dialer Intent Triggered (`tel:...`) ]
+                │
+                ▼
+[ Privacy Shield Activated ]
+      ├── Microphone Input Stream Completely Severed (Zero surveillance)
+      ├── Live Audio Output Halted (0ms Latency)
+      └── Amber Call Banner: "कॉल चालू है • प्राइवेसी शील्ड सक्रिय (माइक बंद)"
+                │
+[ Call Ends / User Returns ]
                 │
                 ▼
 [ Automatic Smooth Reactivation ]
-      ├── Avani says: "कॉल समाप्त हो गई, मैं सुन रही हूँ!"
-      └── Restores Continuous Hands-Free LISTENING Mode
+      ├── Microphone Re-connected Cleanly
+      ├── Avani: "कॉल समाप्त हो गई है! अवनी फिर से सुन रही है।"
+      └── Seamless Hands-Free Continuous Voice Mode
 ```
 
 ### Visual Identity & Theme
-- **Theme**: Futuristic yet minimal Android companion palette (Deep Obsidian `#0b0f19`, Pink `#ec4899`, Emerald `#10b981`, Amber Call Accent `#f59e0b`).
-- **Call-Muted HUD Banner**: Sleek status pill anchored at the top when a call is active:
-  - Phone icon with soft amber pulse (`lucide-react PhoneCall`).
-  - Text: `"कॉल सक्रिय • अवनी म्यूट है (कॉल के बाद अपने आप चालू होगी)"`.
-  - Manual "कॉल समाप्त करें" / "Reactivate Now" button.
-- **Real App Quick-Trigger**: In the active app viewport header, a prominent emerald button with phone icon: `"रियल फोन ऐप में खोलें"` allowing instant force-launch of the Android intent.
+- **Clean Obsidian Header**: Dark background with vibrant pink accent and emerald live pulse indicator.
+- **Three-Dots Menu**:
+  1. Avani Memory (`Brain` icon)
+  2. Ultra Voice Shield (`Shield` icon with current mode indicator)
+  3. Creator Info - Vinay Pratap (`Award` icon)
+  4. Device Permissions (`ShieldCheck` icon)
+  5. Voice Recognition (`Mic` icon)
+  6. Call Privacy Test (`Phone` icon)
+- **Call Privacy Indicator**: A subtle, privacy-reassuring status bar displayed during calls: *"कॉल जारी है • प्राइवेसी शील्ड सक्रिय (माइक व स्पीकर बंद हैं)"*.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Native Intent Launch with Graceful In-App Fallback**
-  - *Chosen Approach*: Use standard Android `intent://` URIs and registered URI schemes (`vnd.youtube://`, `whatsapp://send`, `geo:`, etc.) via an invisible iframe/anchor trigger. If the page remains visible after a short window (meaning native app didn't hijack the viewport), display the in-app interactive UI.
-  - *Why*: Web browsers in iframes or sandboxes cannot determine with 100% certainty if an app is installed without trying. This hybrid pattern guarantees the real app opens if available, while eliminating broken white screens.
-- **Decision 2: Phone Call & Conversation Detection Engine**
-  - *Chosen Approach*: Track phone dialer triggers (`tel:` intents, `makePhoneCall` tool) + Page Visibility API (`visibilitychange` / `blur`) + audio pitch variance for external conversation.
-  - *Why*: Web standards restrict querying the Android TelephonyManager directly from JavaScript; combining intent tracking, tab blur/focus state, and audio energy level provides reliable call detection and auto-resume.
+- **Decision 1: Direct OS Intent Navigation without Modal Popups**
+  - *Chosen Approach*: On voice commands like *"यूट्यूब खोलो"*, directly navigate to the registered Android Intent URI (`intent://...` or `vnd.youtube://`, `whatsapp://`, `tel:`, etc.). Do not call `setActiveAppScreen(...)`.
+  - *Why*: The user explicitly requested the real mobile app to open directly on the phone with zero clicks, instead of having an emulator modal cover Avani's UI.
+- **Decision 2: Complete Microphone Stream Disconnection on Calls**
+  - *Chosen Approach*: Fully suspend `liveAudio.startInputCapture()` and stop PCM streaming when a phone call is active.
+  - *Why*: Privacy is paramount during phone conversations. Ensuring the microphone is not recording or transmitting guarantees user privacy.
+- **Decision 3: Three-Dots Integration for Ultra Shield**
+  - *Chosen Approach*: Relocate the Ultra Shield button from the sticky top bar into the three-dots popover.
+  - *Why*: Keeps the main interface clean, spacious, and focused on the voice orb, while keeping the setting accessible.
 
 ---
 
@@ -85,47 +107,40 @@ Enable Avani to launch real native Android mobile apps directly on the user's ph
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                          App.tsx (Main Coordinator)                    │
+│                              src/App.tsx                               │
 │                                                                        │
 │   ┌───────────────────────────┐      ┌─────────────────────────────┐   │
-│   │ NativeAppIntentLauncher   │      │ CallAutoMuterEngine         │   │
-│   │ (deviceCommandMatcher.ts) │      │ (telephony & call detector) │   │
-│   │ • Android Intent URIs     │      │ • Auto-Mute on Active Call  │   │
-│   │ • Real App Deep Links     │      │ • Audio Output Paused       │   │
-│   │ • Fallback to Viewport    │      │ • Auto-Resume on Call End   │   │
+│   │ NativeAppLauncher         │      │ CallPrivacyEngine           │   │
+│   │ • Direct Intent Dispatch  │      │ • Full Mic Disconnect       │   │
+│   │ • Zero Modal Popups       │      │ • Audio Silence             │   │
+│   │ • Background Continuity   │      │ • Auto-Wake on Call End     │   │
 │   └─────────────┬─────────────┘      └──────────────┬──────────────┘   │
 │                 │                                   │                  │
 │                 ▼                                   ▼                  │
 │   ┌───────────────────────────┐      ┌─────────────────────────────┐   │
-│   │ ActiveAppScreenModal.tsx  │      │ CallMutedStatusBar.tsx      │   │
-│   │ • "रियल ऐप में खोलें" btn │      │ • Soft Amber Call Status    │   │
-│   │ • Interactive Emulator    │      │ • End Call / Unmute Action  │   │
+│   │ Three-Dots Menu           │      │ CallMutedStatusBar.tsx      │   │
+│   │ • Ultra Voice Shield      │      │ • Privacy Reassurance       │   │
+│   │ • Memory & Creator Info   │      │ • Call Timer & End Action   │   │
 │   └───────────────────────────┘      └─────────────────────────────┘   │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Key Modules to Create / Update
+### Key Modules to Update
 
 1. **`src/utils/nativeAppLauncher.ts`**:
-   - Comprehensive Android package and Intent mapping (YouTube, WhatsApp, Instagram, Google Maps, Camera, Calculator, Phone Dialer, Settings, Contacts, Spotify).
-   - Intent URI builder with fallback handling.
-   - Dual-dispatch function: triggers `window.location.href = intentUri` or anchor dispatch, and passes state to `ActiveAppScreen`.
-
-2. **`src/utils/callStateDetector.ts`**:
-   - Call state manager tracking:
-     - `isCallActive: boolean`
-     - `callDuration: number`
-     - `callContactName?: string`
-   - Window visibility and blur hooks to detect when phone dialer takes over.
-   - Auto-pause hook: interrupts `liveAudio`, stops speech synthesis, sets assistant to `CALL_MUTED`.
-   - Auto-resume hook: on focus return or call end, speaks brief confirmation and re-engages `startListeningSession()`.
-
+   - Provide `dispatchDirectNativeApp(target: NativeLaunchTarget)`:
+     - Directly launches the real Android Intent via standard location navigation / anchor dispatch.
+     - Does NOT invoke any in-app fallback modal.
+2. **`src/App.tsx`**:
+   - Remove automatic `setActiveAppScreen(...)` from voice command flows (`fastCmd.handled`, `directCmd.handled`, `toolCall`).
+   - In `directCmd.handled` and `fastCmd.handled`: call `dispatchDirectNativeApp` so the phone's native app launches directly.
+   - When a call starts:
+     - Call `liveAudio.stopInputCapture()`.
+     - Completely cut microphone streaming.
+   - When a call ends:
+     - Automatically resume `startListeningSession()`.
+   - In the header JSX:
+     - Remove `#noise-isolation-btn`.
+     - Add Ultra Voice Shield selector inside the three-dots popover.
 3. **`src/components/CallMutedStatusBar.tsx`**:
-   - Beautiful floating call banner showing call status, timer, and auto-reactivation notification.
-
-4. **`src/components/ActiveAppScreenModal.tsx`**:
-   - Add top-bar button: `"रियल फोन ऐप में खोलें"` (`Open in Native App`) with package launcher.
-
-5. **`src/App.tsx`**:
-   - Wire `callStateDetector` into assistant lifecycle.
-   - Wire `NativeAppIntentLauncher` into voice and text command execution.
+   - Update text to emphasize privacy: *"कॉल जारी है • प्राइवेसी शील्ड सक्रिय (माइक व स्पीकर पूरी तरह बंद हैं)"*.

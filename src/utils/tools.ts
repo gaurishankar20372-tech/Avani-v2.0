@@ -4,6 +4,7 @@ import { downloadPdf, downloadZip, sendViaWhatsApp, sendViaEmail, shareFileOrTex
 import { saveMemory, saveGeneratedFileRecord } from "../services/avaniMemoryService";
 import { dispatchNativeAndroidIntent, dispatchFastOpen } from "./deviceCommandMatcher";
 import { voiceRecognitionEngine } from "./voiceRecognitionEngine";
+import { resolveAppTarget, dispatchDirectNativeApp } from "./nativeAppLauncher";
 
 export interface ToolExecutionResult {
   toolName: string;
@@ -41,30 +42,19 @@ export class ToolExecutionEngine {
       case "openApp": {
         const packageName = args.packageName || "";
         const appName = args.appName || packageName.split(".").pop() || "Application";
-        const app = this.apps.find(
-          (a) =>
-            a.packageName.toLowerCase() === packageName.toLowerCase() ||
-            a.name.toLowerCase() === appName.toLowerCase() ||
-            appName.toLowerCase().includes(a.name.toLowerCase()) ||
-            a.name.toLowerCase().includes(appName.toLowerCase())
-        );
+        const target = resolveAppTarget(appName || packageName);
 
-        const targetName = app ? app.name : appName;
-        const targetPackage = app ? app.packageName : (packageName || `com.android.${appName.toLowerCase()}`);
-        const nativeUri = app?.deepLinkScheme || `intent:#Intent;package=${targetPackage};action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;end`;
+        const targetName = target.hindiName || target.name;
+        const targetPackage = target.packageName || packageName;
+        const nativeUri = target.intentUri || target.deepLinkScheme;
 
         const remarkList = SASSY_REMARKS.openAppHindi || SASSY_REMARKS.openApp;
         const remark = remarkList[
           Math.floor(Math.random() * remarkList.length)
         ].replace("{app}", targetName);
 
-        // Fast launch the app (native intent on Android, official web fallback if desktop)
-        dispatchFastOpen({
-          intentUri: nativeUri,
-          packageName: targetPackage,
-          appName: targetName,
-          fallbackWebUrl: app?.fallbackWebUrl,
-        });
+        // Fast launch the real native app directly to Android OS (zero clicks)
+        dispatchDirectNativeApp(target);
 
         return {
           toolName: "openApp",
@@ -74,7 +64,7 @@ export class ToolExecutionEngine {
           intentAction: "android.intent.action.MAIN",
           intentUri: nativeUri,
           targetName,
-          extraData: { app: app || { name: targetName, packageName: targetPackage } },
+          extraData: { app: { name: targetName, packageName: targetPackage } },
         };
       }
 

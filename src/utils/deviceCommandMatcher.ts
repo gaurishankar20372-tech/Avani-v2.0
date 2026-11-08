@@ -1,4 +1,5 @@
 import { PermissionsState } from "../types";
+import { resolveAppTarget, dispatchDirectNativeApp, UNIVERSAL_APP_REGISTRY } from "./nativeAppLauncher";
 
 export interface MatchedDeviceCommand {
   handled: boolean;
@@ -330,15 +331,12 @@ export interface FastOpenOptions {
  * Executes in 0ms with zero delay.
  */
 export function dispatchFastOpen(options: FastOpenOptions): void {
-  const isAndroid = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
-
   // A. If target is explicitly a Website / Web URL
   if (options.isWeb && options.webUrl) {
     if (typeof window !== "undefined") {
       try {
         const opened = window.open(options.webUrl, "_blank", "noopener,noreferrer");
         if (!opened || opened.closed || typeof opened.closed === "undefined") {
-          // If popup blocker intervened, trigger via anchor click
           const link = document.createElement("a");
           link.href = options.webUrl;
           link.target = "_blank";
@@ -358,45 +356,15 @@ export function dispatchFastOpen(options: FastOpenOptions): void {
   }
 
   // B. If target is an Android Native App
-  // 1. Check Android Native WebView bridge (if app is running inside an APK wrapper)
-  if (typeof window !== "undefined" && (window as any).Android) {
-    if (typeof (window as any).Android.openApp === "function" && options.packageName) {
-      try {
-        (window as any).Android.openApp(options.packageName);
-        return;
-      } catch (err) {
-        console.warn("Android bridge openApp notice:", err);
-      }
-    }
-  }
-
-  // 2. Trigger native intent immediately via invisible anchor click
-  if (options.intentUri && typeof document !== "undefined") {
-    try {
-      const link = document.createElement("a");
-      link.href = options.intentUri;
-      link.rel = "noopener noreferrer";
-      link.style.display = "none";
-      document.body.appendChild(link);
-      link.click();
-      requestAnimationFrame(() => {
-        if (document.body.contains(link)) {
-          document.body.removeChild(link);
-        }
-      });
-    } catch (err) {
-      console.warn("Native intent click notice:", err);
-    }
-  }
-
-  // 3. If running on desktop / non-Android browser where native intent won't be captured,
-  // or user needs web fallback:
-  if (!isAndroid && options.fallbackWebUrl) {
-    try {
-      window.open(options.fallbackWebUrl, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      console.warn("Desktop web fallback notice:", err);
-    }
+  if (options.packageName || options.intentUri || options.appName || options.targetName) {
+    dispatchDirectNativeApp({
+      name: options.appName || options.targetName || "App",
+      packageName: options.packageName,
+      intentUri: options.intentUri,
+      deepLinkScheme: options.intentUri,
+      fallbackWebUrl: options.fallbackWebUrl,
+      title: options.appName || options.targetName || "App",
+    });
   }
 }
 
@@ -573,85 +541,55 @@ export function matchDeviceCommand(rawQuery: string): MatchedDeviceCommand {
     }
   }
 
-  // 4. OPEN APP COMMANDS (Android Native with Web Fallback):
-  // Detect patterns: "...खोलो", "...ओपन करो", "...शुरू करो", "...चलाओ", "open...", "launch...", "start..."
+  // 4. OPEN APP COMMANDS (Android Native - Universal Resolver for ANY App on user's phone):
+  // Detect patterns: "...खोलो", "...खोल दो", "...खोलिये", "...चालू करो", "...शुरू करो", "...चलाओ", "...लगाओ", "...ओपन करो", "...स्टार्ट करो", "open...", "launch...", "start...", "run..."
+  // OR standalone app names (e.g., "कैमरा", "कैलकुलेटर", "व्हाट्सएप", "सेटिंग्स", "गैलरी", "फोनपे", "पेटीएम", "गूगल पे", "ज़ोमैटो", "स्विगी", etc.)
   const isOpenAppCommand =
-    /(?:खोलो|खोल दो|खोलिये|ओपन करो|चालू करो|चलाओ|लगाओ|open|launch|start|run)/i.test(query) ||
-    /^(?:यूट्यूब|व्हाट्सएप|इंस्टाग्राम|कैमरा|कैलकुलेटर|सेटिंग्स|गैलरी|फोनपे|पेटीएम|गूगल पे|स्पॉटिफाय)$/i.test(query);
+    /(?:खोलो|खोल दो|खोलिये|ओपन करो|चालू करो|शुरू करो|चलाओ|लगाओ|स्टार्ट करो|open|launch|start|run)\s*(?:करो|दो)?/i.test(query) ||
+    UNIVERSAL_APP_REGISTRY.some((app) =>
+      app.aliases.some((alias) => query === alias.toLowerCase() || query === `${alias.toLowerCase()} app` || query === `${alias.toLowerCase()} ऐप`)
+    );
 
   if (isOpenAppCommand) {
-    // Find matching app in catalog
-    for (const app of APP_CATALOG) {
-      const isMatch = app.aliases.some((alias) => {
-        const regex = new RegExp(`(^|\\s|[^\u0000-\u007F])${alias}($|\\s|[^\u0000-\u007F])`, "i");
-        return regex.test(query) || query.includes(alias);
-      });
+    // Extract candidate app name from query
+    let candidateName = query
+      .replace(/(?:खोलो|खोल दो|खोलिये|ओपन करो|चालू करो|शुरू करो|चलाओ|लगाओ|स्टार्ट करो|open|launch|start|run)/gi, "")
+      .replace(/(?:प्लीज|जरा|तुरंत|जल्दी|मेरे फोन में|मोबाइल में|in phone|app|ऐप)/gi, "")
+      .trim();
 
-      if (isMatch) {
-        const intentUri =
-          app.deepLinkScheme ||
-          `intent:#Intent;package=${app.packageName};action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;end`;
-
-        // Direct instant dispatch (0ms)
-        dispatchFastOpen({
-          intentUri,
-          packageName: app.packageName,
-          appName: app.name,
-          fallbackWebUrl: app.fallbackWebUrl,
-        });
-
-        const replyRemarks = [
-          `लीजिए! मैंने आपके फोन में ${app.hindiName} खोल दिया है।`,
-          `हुक्म सर आँखों पर! ${app.hindiName} चालू कर दिया गया है।`,
-          `लो जी! ${app.hindiName} हाज़िर है। अब मत कहना कि अवनी काम नहीं करती!`,
-        ];
-        const replyText = replyRemarks[Math.floor(Math.random() * replyRemarks.length)];
-
-        return {
-          handled: true,
-          toolName: "openApp",
-          args: { packageName: app.packageName, appName: app.name },
-          replyText,
-          intentAction: "android.intent.action.MAIN",
-          intentUri,
-          fallbackWebUrl: app.fallbackWebUrl,
-          targetName: app.hindiName,
-        };
-      }
+    // If candidateName became empty (e.g. user just said "खोलो"), fallback to original query
+    if (!candidateName) {
+      candidateName = query;
     }
 
-    // Generic app opening if user named an app: e.g. "XYZ ऐप खोलो" or "open XYZ"
-    const genericMatch =
-      query.match(/(?:open|launch)\s+([a-zA-Z0-9_ ]+)/i) ||
-      query.match(/([a-zA-Z0-9_\u0900-\u097F ]+?)\s*(?:ऐप|app)?\s*(?:खोलो|खोल दो|ओपन करो)/i);
+    if (
+      candidateName &&
+      candidateName.length > 0 &&
+      !["चैट", "हिस्ट्री", "मेमोरी", "मेनू", "chat", "history", "memory"].includes(candidateName)
+    ) {
+      const target = resolveAppTarget(candidateName);
+      const appDisplayName = target.hindiName || target.name;
 
-    if (genericMatch) {
-      const extractedName = genericMatch[1].trim();
-      if (
-        extractedName &&
-        extractedName.length > 1 &&
-        !["चैट", "हिस्ट्री", "मेमोरी", "मेनू", "chat", "history", "memory"].includes(extractedName)
-      ) {
-        const cleanName = extractedName.charAt(0).toUpperCase() + extractedName.slice(1);
-        const pkgGuess = `com.${cleanName.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
-        const intentUri = `intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;end`;
+      // Direct instant dispatch to Android OS (0 latency, 0 clicks)
+      dispatchDirectNativeApp(target);
 
-        dispatchFastOpen({
-          intentUri,
-          packageName: pkgGuess,
-          appName: cleanName,
-        });
+      const replyRemarks = [
+        `लीजिए! मैंने आपके फोन में ${appDisplayName} तुरंत खोल दिया है।`,
+        `हुक्म सर आँखों पर! ${appDisplayName} हाज़िर है।`,
+        `लो जी! आपके फोन में ${appDisplayName} चालू हो गया है!`,
+      ];
+      const replyText = replyRemarks[Math.floor(Math.random() * replyRemarks.length)];
 
-        return {
-          handled: true,
-          toolName: "openApp",
-          args: { packageName: pkgGuess, appName: cleanName },
-          replyText: `लीजिए! आपके फोन में ${cleanName} ऐप खोलने की कमांड भेज दी गई है।`,
-          intentAction: "android.intent.action.MAIN",
-          intentUri,
-          targetName: cleanName,
-        };
-      }
+      return {
+        handled: true,
+        toolName: "openApp",
+        args: { packageName: target.packageName, appName: target.name },
+        replyText,
+        intentAction: "android.intent.action.MAIN",
+        intentUri: target.intentUri || target.deepLinkScheme,
+        fallbackWebUrl: target.fallbackWebUrl,
+        targetName: appDisplayName,
+      };
     }
   }
 

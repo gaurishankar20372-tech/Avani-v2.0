@@ -48,7 +48,7 @@ import { liveAudio } from "./utils/audio";
 import { wakeWordDetector, isLikelyAmbientNoise } from "./utils/wakeWord";
 import { toolEngine } from "./utils/tools";
 import { callStateDetector } from "./utils/callStateDetector";
-import { launchRealAppOrFallback } from "./utils/nativeAppLauncher";
+import { launchRealAppOrFallback, dispatchDirectNativeApp, resolveAppTarget } from "./utils/nativeAppLauncher";
 import { AvaniOrbCanvas } from "./components/AvaniOrbCanvas";
 import { ForegroundServiceNotification } from "./components/ForegroundServiceNotification";
 import { PermissionsModal } from "./components/PermissionsModal";
@@ -406,13 +406,15 @@ export default function App() {
           speechVerificationTimerRef.current = null;
         }
         isSpeechPausedDueToNoiseRef.current = false;
+        // Complete Privacy Protection: Cut microphone recording and audio completely
+        liveAudio.stopInputCapture();
         liveAudio.interrupt();
         if ("speechSynthesis" in window) {
           window.speechSynthesis.cancel();
         }
         setAssistantState("CALL_MUTED");
-        setStatusMessage(`कॉल जारी है (${st.contactName}) — अवनी म्यूट है`);
-        setLatestSubtitle(`[कॉल सक्रिय: ${st.contactName}]`);
+        setStatusMessage(`कॉल जारी है (${st.contactName}) — प्राइवेसी शील्ड सक्रिय (माइक व स्पीकर बंद)`);
+        setLatestSubtitle(`[कॉल सक्रिय: ${st.contactName} • माइक बंद]`);
       }
     });
 
@@ -427,7 +429,7 @@ export default function App() {
         if (isContinuousListeningRef.current) {
           startListeningSession();
         }
-      }, 1200);
+      }, 1000);
     });
 
     return () => {
@@ -482,29 +484,15 @@ export default function App() {
           if (fastCmd.handled) {
             if (fastCmd.toolName === "openApp" || fastCmd.toolName === "openWeb" || fastCmd.isWeb) {
               const targetTitle = fastCmd.targetName || fastCmd.args?.appName || fastCmd.args?.title || "App";
-              launchRealAppOrFallback(
-                {
-                  name: targetTitle,
-                  packageName: fastCmd.args?.packageName,
-                  intentUri: fastCmd.intentUri,
-                  deepLinkScheme: fastCmd.intentUri || fastCmd.webUrl,
-                  fallbackWebUrl: fastCmd.webUrl || fastCmd.args?.url || fastCmd.fallbackWebUrl,
-                  query: fastCmd.args?.query || "",
-                  title: targetTitle,
-                },
-                (fb) => {
-                  setActiveAppScreen({
-                    id: `screen_${Date.now()}`,
-                    name: fb.name,
-                    packageName: fb.packageName,
-                    type: fastCmd.isWeb ? "web" : "app",
-                    url: fb.fallbackWebUrl || fb.intentUri,
-                    query: fb.query || "",
-                    title: fb.title,
-                    openedAt: Date.now(),
-                  });
-                }
-              );
+              dispatchDirectNativeApp({
+                name: targetTitle,
+                packageName: fastCmd.args?.packageName,
+                intentUri: fastCmd.intentUri,
+                deepLinkScheme: fastCmd.intentUri || fastCmd.webUrl,
+                fallbackWebUrl: fastCmd.webUrl || fastCmd.args?.url || fastCmd.fallbackWebUrl,
+                query: fastCmd.args?.query || "",
+                title: targetTitle,
+              });
             }
 
             if (fastCmd.toolName === "makePhoneCall") {
@@ -595,11 +583,14 @@ export default function App() {
               fileData: toolResult.fileData,
             };
 
-            // If app or web was launched, open active app screen directly!
+            // If app or web was launched, open real native app on phone directly!
             if (call.name === "openApp" || call.name === "openWeb") {
               const targetTitle = call.args?.appName || call.args?.title || "App";
-              launchRealAppOrFallback(
-                {
+              if (call.name === "openApp") {
+                const target = resolveAppTarget(targetTitle || call.args?.packageName || "App");
+                dispatchDirectNativeApp(target);
+              } else {
+                dispatchDirectNativeApp({
                   name: targetTitle,
                   packageName: call.args?.packageName,
                   intentUri: toolResult.intentUri,
@@ -607,20 +598,8 @@ export default function App() {
                   fallbackWebUrl: call.args?.url || toolResult.webUrl,
                   query: call.args?.query || "",
                   title: targetTitle,
-                },
-                (fb) => {
-                  setActiveAppScreen({
-                    id: `screen_${Date.now()}`,
-                    name: fb.name,
-                    packageName: fb.packageName,
-                    type: call.name === "openWeb" ? "web" : "app",
-                    url: fb.fallbackWebUrl || fb.intentUri,
-                    query: fb.query || "",
-                    title: fb.title,
-                    openedAt: Date.now(),
-                  });
-                }
-              );
+                });
+              }
             }
 
             if (call.name === "makePhoneCall") {
@@ -764,29 +743,15 @@ export default function App() {
     if (directCmd.handled) {
       if (directCmd.toolName === "openApp" || directCmd.toolName === "openWeb" || directCmd.isWeb) {
         const targetTitle = directCmd.targetName || directCmd.args?.appName || directCmd.args?.title || "App";
-        launchRealAppOrFallback(
-          {
-            name: targetTitle,
-            packageName: directCmd.args?.packageName,
-            intentUri: directCmd.intentUri,
-            deepLinkScheme: directCmd.intentUri || directCmd.webUrl,
-            fallbackWebUrl: directCmd.webUrl || directCmd.args?.url || directCmd.fallbackWebUrl,
-            query: directCmd.args?.query || "",
-            title: targetTitle,
-          },
-          (fb) => {
-            setActiveAppScreen({
-              id: `screen_${Date.now()}`,
-              name: fb.name,
-              packageName: fb.packageName,
-              type: directCmd.isWeb ? "web" : "app",
-              url: fb.fallbackWebUrl || fb.intentUri,
-              query: fb.query || "",
-              title: fb.title,
-              openedAt: Date.now(),
-            });
-          }
-        );
+        dispatchDirectNativeApp({
+          name: targetTitle,
+          packageName: directCmd.args?.packageName,
+          intentUri: directCmd.intentUri,
+          deepLinkScheme: directCmd.intentUri || directCmd.webUrl,
+          fallbackWebUrl: directCmd.webUrl || directCmd.args?.url || directCmd.fallbackWebUrl,
+          query: directCmd.args?.query || "",
+          title: targetTitle,
+        });
       }
 
       if (directCmd.toolName === "makePhoneCall") {
@@ -909,11 +874,14 @@ export default function App() {
             fileData: toolResult.fileData,
           };
 
-          // If app or web was launched, open active app screen directly!
+          // If app or web was launched, open real native app directly on phone!
           if (call.name === "openApp" || call.name === "openWeb") {
             const targetTitle = call.args?.appName || call.args?.title || "App";
-            launchRealAppOrFallback(
-              {
+            if (call.name === "openApp") {
+              const target = resolveAppTarget(targetTitle || call.args?.packageName || "App");
+              dispatchDirectNativeApp(target);
+            } else {
+              dispatchDirectNativeApp({
                 name: targetTitle,
                 packageName: call.args?.packageName,
                 intentUri: toolResult.intentUri,
@@ -921,20 +889,8 @@ export default function App() {
                 fallbackWebUrl: call.args?.url || toolResult.webUrl,
                 query: call.args?.query || "",
                 title: targetTitle,
-              },
-              (fb) => {
-                setActiveAppScreen({
-                  id: `screen_${Date.now()}`,
-                  name: fb.name,
-                  packageName: fb.packageName,
-                  type: call.name === "openWeb" ? "web" : "app",
-                  url: fb.fallbackWebUrl || fb.intentUri,
-                  query: fb.query || "",
-                  title: fb.title,
-                  openedAt: Date.now(),
-                });
-              }
-            );
+              });
+            }
           }
 
           if (call.name === "makePhoneCall") {
@@ -1228,6 +1184,24 @@ export default function App() {
     // Direct Native Android Device & Fast Web Command Recognition (0ms latency)
     const directCmd = matchDeviceCommand(queryText);
     if (directCmd.handled) {
+      if (directCmd.toolName === "openApp" || directCmd.toolName === "openWeb" || directCmd.isWeb) {
+        const targetTitle = directCmd.targetName || directCmd.args?.appName || directCmd.args?.title || "App";
+        dispatchDirectNativeApp({
+          name: targetTitle,
+          packageName: directCmd.args?.packageName,
+          intentUri: directCmd.intentUri,
+          deepLinkScheme: directCmd.intentUri || directCmd.webUrl,
+          fallbackWebUrl: directCmd.webUrl || directCmd.args?.url || directCmd.fallbackWebUrl,
+          query: directCmd.args?.query || "",
+          title: targetTitle,
+        });
+      }
+
+      if (directCmd.toolName === "makePhoneCall") {
+        const contactName = directCmd.args?.contactName || directCmd.targetName || "Contact";
+        callStateDetector.notifyCallIntentDispatched(contactName, directCmd.args?.phoneNumber);
+      }
+
       const avaniMsg: ChatMessage = {
         id: "avani-" + Date.now(),
         sender: "avani",
@@ -1476,41 +1450,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right Side: Noise Shield, Chat Mode & Three-Dots Menu */}
+        {/* Right Side: Chat Mode & Three-Dots Menu */}
         <div className="flex items-center gap-2 relative" ref={statusMenuRef}>
-          {/* Noise Isolation Shield Indicator / Quick-Toggle Button */}
-          <button
-            id="noise-isolation-btn"
-            onClick={() => {
-              const nextMode: NoiseSuppressionMode =
-                noiseMode === "ultra_isolation"
-                  ? "high_rejection"
-                  : noiseMode === "high_rejection"
-                  ? "balanced"
-                  : "ultra_isolation";
-              setNoiseMode(nextMode);
-              liveAudio.setNoiseMode(nextMode);
-            }}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 shadow-sm ${
-              noiseMode === "ultra_isolation"
-                ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-300 hover:bg-emerald-900/80"
-                : noiseMode === "high_rejection"
-                ? "bg-cyan-950/80 border-cyan-500/50 text-cyan-300 hover:bg-cyan-900/80"
-                : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800"
-            }`}
-            title="नॉइज़ शील्ड मोड बदलें (Ultra Voice Shield: बाहरी शोर 100% ब्लॉक, केवल वक्ता की आवाज़ पर ध्यान)"
-            aria-label="Toggle Noise Isolation Shield"
-          >
-            <Shield className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="font-mono text-[11px]">
-              {noiseMode === "ultra_isolation"
-                ? "Ultra Shield"
-                : noiseMode === "high_rejection"
-                ? "High Shield"
-                : "Balanced"}
-            </span>
-          </button>
-
           {/* Chat Mode Button */}
           <button
             id="open-chat-mode-btn"
@@ -1544,13 +1485,61 @@ export default function App() {
 
           {/* Dropdown Popover - Pitch Black Dark */}
           {isStatusMenuOpen && (
-            <div className="absolute right-0 top-full mt-2 w-60 py-2 rounded-2xl bg-black border border-neutral-800 shadow-[0_20px_60px_rgba(0,0,0,0.95)] ring-1 ring-white/10 z-50 animate-in fade-in zoom-in-95 duration-150">
+            <div className="absolute right-0 top-full mt-2 w-64 py-2 rounded-2xl bg-black border border-neutral-800 shadow-[0_20px_60px_rgba(0,0,0,0.95)] ring-1 ring-white/10 z-50 animate-in fade-in zoom-in-95 duration-150">
               <div className="px-3.5 py-2 border-b border-neutral-900 flex items-center justify-between">
                 <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold">
                   Avani 2.O Menu
                 </span>
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400/80" />
               </div>
+
+              {/* 0. Noise Isolation / Ultra Voice Shield Toggle */}
+              <button
+                id="status-menu-noise-shield"
+                onClick={() => {
+                  const nextMode: NoiseSuppressionMode =
+                    noiseMode === "ultra_isolation"
+                      ? "high_rejection"
+                      : noiseMode === "high_rejection"
+                      ? "balanced"
+                      : "ultra_isolation";
+                  setNoiseMode(nextMode);
+                  liveAudio.setNoiseMode(nextMode);
+                }}
+                className="w-full px-3.5 py-2.5 text-left text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-900/90 flex items-center justify-between transition-colors group border-b border-neutral-900/80"
+                title="Ultra Voice Shield: बाहरी शोर 100% ब्लॉक, केवल आपकी आवाज़ पर फोकस"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Shield
+                    className={`w-4 h-4 ${
+                      noiseMode === "ultra_isolation"
+                        ? "text-emerald-400"
+                        : noiseMode === "high_rejection"
+                        ? "text-cyan-400"
+                        : "text-slate-400"
+                    } group-hover:scale-110 transition-transform`}
+                  />
+                  <div className="flex flex-col">
+                    <span className="text-white font-semibold">अल्ट्रा शील्ड (नॉइज़)</span>
+                    <span className="text-[10px] text-neutral-400">बाहरी शोर ब्लॉक करें</span>
+                  </div>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                    noiseMode === "ultra_isolation"
+                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                      : noiseMode === "high_rejection"
+                      ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
+                      : "bg-neutral-900 text-slate-400 border-neutral-700"
+                  }`}
+                >
+                  {noiseMode === "ultra_isolation"
+                    ? "Ultra Shield"
+                    : noiseMode === "high_rejection"
+                    ? "High Shield"
+                    : "Balanced"}
+                </span>
+              </button>
 
               {/* 1. Avani Memory */}
               <button
