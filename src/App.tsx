@@ -232,8 +232,33 @@ export default function App() {
   const statusMenuRef = useRef<HTMLDivElement>(null);
   const [isSourceViewerOpen, setIsSourceViewerOpen] = useState<boolean>(false);
   const [isDeviceDrawerOpen, setIsDeviceDrawerOpen] = useState<boolean>(false);
-  const [isPhoneFrameMode, setIsPhoneFrameMode] = useState<boolean>(false);
   const [currentToolEvent, setCurrentToolEvent] = useState<ToolCallEvent | null>(null);
+  const [lastLaunchedApp, setLastLaunchedApp] = useState<{
+    name: string;
+    hindiName?: string;
+    primaryUri: string;
+    timestamp: number;
+  } | null>(null);
+
+  // Listen for direct native app dispatches to provide instant visual confirmation and 1-tap fast access
+  useEffect(() => {
+    const handleAppLaunched = (e: any) => {
+      const detail = e.detail;
+      if (detail?.target) {
+        setLastLaunchedApp({
+          name: detail.target.name,
+          hindiName: detail.target.hindiName,
+          primaryUri: detail.primaryUri,
+          timestamp: Date.now(),
+        });
+        setTimeout(() => {
+          setLastLaunchedApp((curr) => (curr && Date.now() - curr.timestamp >= 7500 ? null : curr));
+        }, 8000);
+      }
+    };
+    window.addEventListener("avani-native-app-launched", handleAppLaunched);
+    return () => window.removeEventListener("avani-native-app-launched", handleAppLaunched);
+  }, []);
 
   // Close three-dots dropdown menu on click outside
   useEffect(() => {
@@ -741,19 +766,7 @@ export default function App() {
     // 0. Direct Native Android Device & Fast Web Command Execution (0ms latency)
     const directCmd = matchDeviceCommand(trimmed);
     if (directCmd.handled) {
-      if (directCmd.toolName === "openApp" || directCmd.toolName === "openWeb" || directCmd.isWeb) {
-        const targetTitle = directCmd.targetName || directCmd.args?.appName || directCmd.args?.title || "App";
-        dispatchDirectNativeApp({
-          name: targetTitle,
-          packageName: directCmd.args?.packageName,
-          intentUri: directCmd.intentUri,
-          deepLinkScheme: directCmd.intentUri || directCmd.webUrl,
-          fallbackWebUrl: directCmd.webUrl || directCmd.args?.url || directCmd.fallbackWebUrl,
-          query: directCmd.args?.query || "",
-          title: targetTitle,
-        });
-      }
-
+      // If it was an openApp or openWeb command, matchDeviceCommand has already directly dispatched it with full native schemas
       if (directCmd.toolName === "makePhoneCall") {
         const contactName = directCmd.args?.contactName || directCmd.targetName || "Contact";
         callStateDetector.notifyCallIntentDispatched(contactName, directCmd.args?.phoneNumber);
@@ -965,6 +978,8 @@ export default function App() {
     // Stream user utterances from SpeechRecognition while in listening mode
     let utteranceTimer: any = null;
     let lastTranscript = "";
+    let lastHandledCommand = "";
+    let lastHandledTime = 0;
 
     wakeWordDetector.setUtteranceListener((transcript, isFinal) => {
       if (stateRef.current === "SPEAKING") return;
@@ -999,15 +1014,31 @@ export default function App() {
         }
         // Keep listener open for continuous voice commands; reset transcript buffer
         lastTranscript = "";
+        lastHandledCommand = text;
+        lastHandledTime = Date.now();
         handleSimulatedQuery(text);
       };
+
+      // ⚡ INSTANT ATTENTION & 0MS EXECUTION:
+      // If the interim words already match an app or phone command (e.g. "यूट्यूब खोलो", "कैमरा खोलो", "व्हाट्सएप चालू करो", "कैलकुलेटर"),
+      // execute IMMEDIATELY at 0ms latency without waiting for speech pause!
+      const fastCheck = matchDeviceCommand(transcript);
+      if (fastCheck.handled) {
+        const isRecentDup =
+          lastHandledCommand === transcript && Date.now() - lastHandledTime < 2500;
+        if (!isRecentDup) {
+          processUtterance(transcript);
+          return;
+        }
+      }
 
       if (isFinal) {
         processUtterance(transcript);
       } else {
+        // Fast 300ms responsiveness for conversational queries once speaker pauses
         utteranceTimer = setTimeout(() => {
           processUtterance(lastTranscript);
-        }, 950);
+        }, 300);
       }
     });
 
@@ -1639,6 +1670,33 @@ export default function App() {
           isGeneratedFileModalOpen ? "hidden" : ""
         }`}
       >
+        {/* Floating Fast-Launch Confirmation & 1-Tap Trigger for Native Mobile Apps */}
+        {lastLaunchedApp && (
+          <div className="mb-3 w-full max-w-sm mx-auto animate-in fade-in slide-in-from-top-3 duration-200">
+            <a
+              href={lastLaunchedApp.primaryUri}
+              className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-950/95 via-neutral-900/95 to-emerald-950/95 border border-emerald-500/50 shadow-xl shadow-emerald-950/60 backdrop-blur-md active:scale-95 transition-all text-left group"
+              title="तुरंत ऐप खोलें"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="w-7 h-7 rounded-full bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400 shrink-0 text-sm animate-pulse">
+                  ⚡
+                </span>
+                <div className="flex flex-col">
+                  <span className="text-white text-xs font-bold leading-tight flex items-center gap-1.5">
+                    {lastLaunchedApp.hindiName || lastLaunchedApp.name} खोला गया
+                    <span className="text-[10px] text-emerald-400 font-mono">(Active)</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-300/80 font-medium">
+                    यदि फोन में न खुला हो, तो यहाँ टैप करें
+                  </span>
+                </div>
+              </div>
+              <ExternalLink className="w-4 h-4 text-emerald-400 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+            </a>
+          </div>
+        )}
+
         {/* Central Responsive Voice Orb */}
         <div className="my-auto flex flex-col items-center justify-center text-center">
           {/* Live Universal Voice Recognition Badge */}

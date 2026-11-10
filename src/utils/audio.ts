@@ -74,8 +74,8 @@ export class LiveAudioManager {
   private onInterruptCallback: (() => void) | null = null;
 
   // Noise Floor & Voice Activity Detection (VAD)
-  public noiseMode: NoiseSuppressionMode = "ultra_isolation";
-  private noiseFloor = 0.015;
+  public noiseMode: NoiseSuppressionMode = "high_rejection";
+  private noiseFloor = 0.008;
   private consecutiveVoiceFrames = 0;
   private isSpeechActive = false;
   private currentSpeechConfidence = 0;
@@ -140,31 +140,31 @@ export class LiveAudioManager {
 
       const source = this.inputCtx.createMediaStreamSource(this.mediaStream);
 
-      // Stage 1. Highpass filter (85Hz): eliminates handling rumble, AC hum, sub-bass
+      // Stage 1. Highpass filter (100Hz): cuts low-frequency desk rumble, AC thud, vehicle rumble
       this.voiceFilterNode = this.inputCtx.createBiquadFilter();
       this.voiceFilterNode.type = "highpass";
-      this.voiceFilterNode.frequency.setValueAtTime(85, this.inputCtx.currentTime);
+      this.voiceFilterNode.frequency.setValueAtTime(100, this.inputCtx.currentTime);
       this.voiceFilterNode.Q.setValueAtTime(0.7, this.inputCtx.currentTime);
 
-      // Stage 2. Lowpass filter (3600Hz): cuts high-frequency fan hiss, whistles, typing noise
+      // Stage 2. Lowpass filter (3400Hz): cuts high-frequency hiss, fan whistle, keyboard clatter
       this.lowpassFilterNode = this.inputCtx.createBiquadFilter();
       this.lowpassFilterNode.type = "lowpass";
-      this.lowpassFilterNode.frequency.setValueAtTime(3600, this.inputCtx.currentTime);
+      this.lowpassFilterNode.frequency.setValueAtTime(3400, this.inputCtx.currentTime);
       this.lowpassFilterNode.Q.setValueAtTime(0.7, this.inputCtx.currentTime);
 
-      // Stage 3. Peaking voice clarity filter (1200Hz, +2.5dB): boosts human voice clarity & presence
+      // Stage 3. Peaking voice clarity filter (1350Hz, +3.5dB): enhances human speech formant clarity
       this.voiceClarityFilterNode = this.inputCtx.createBiquadFilter();
       this.voiceClarityFilterNode.type = "peaking";
-      this.voiceClarityFilterNode.frequency.setValueAtTime(1200, this.inputCtx.currentTime);
-      this.voiceClarityFilterNode.Q.setValueAtTime(1.0, this.inputCtx.currentTime);
-      this.voiceClarityFilterNode.gain.setValueAtTime(2.5, this.inputCtx.currentTime);
+      this.voiceClarityFilterNode.frequency.setValueAtTime(1350, this.inputCtx.currentTime);
+      this.voiceClarityFilterNode.Q.setValueAtTime(1.1, this.inputCtx.currentTime);
+      this.voiceClarityFilterNode.gain.setValueAtTime(3.5, this.inputCtx.currentTime);
 
       this.inputAnalyser = this.inputCtx.createAnalyser();
       this.inputAnalyser.fftSize = 256;
       this.inputAnalyser.smoothingTimeConstant = 0.8;
 
-      // 4096 buffer size gives ~256ms chunk @ 16kHz
-      this.processorNode = this.inputCtx.createScriptProcessor(4096, 1, 1);
+      // 2048 buffer size gives ~128ms chunk @ 16kHz for ultra-fast, zero-lag voice attention
+      this.processorNode = this.inputCtx.createScriptProcessor(2048, 1, 1);
 
       this.processorNode.onaudioprocess = (e) => {
         if (!this.isCapturing) return;
@@ -177,34 +177,34 @@ export class LiveAudioManager {
         }
         const rms = Math.sqrt(sum / channelData.length);
 
-        // 2. Adaptive Noise Floor Tracking (Moving average of quiet intervals)
-        if (rms < this.noiseFloor * 1.5 || this.noiseFloor === 0) {
-          this.noiseFloor = this.noiseFloor * 0.95 + rms * 0.05;
+        // 2. Adaptive Noise Floor Tracking
+        if (rms < this.noiseFloor * 1.4 || this.noiseFloor === 0) {
+          this.noiseFloor = this.noiseFloor * 0.94 + rms * 0.06;
         } else {
-          this.noiseFloor = this.noiseFloor * 0.998 + 0.002 * Math.min(rms, 0.04);
+          this.noiseFloor = this.noiseFloor * 0.995 + 0.005 * Math.min(rms, 0.025);
         }
-        this.noiseFloor = Math.max(0.006, Math.min(0.07, this.noiseFloor));
+        this.noiseFloor = Math.max(0.003, Math.min(0.04, this.noiseFloor));
 
-        // 3. Autocorrelation & Pitch Periodicity Analysis (distinguishes human vocal cords from noise)
-        // Human speech fundamental frequency is 80Hz - 450Hz (periods ~35 to ~200 samples at 16kHz)
+        // 3. Human Vocal Cord Autocorrelation & Pitch Periodicity (80Hz - 450Hz)
         let bestR = 0;
         let sumPower = 0;
-        for (let i = 0; i < 512; i++) {
+        const sampleCount = Math.min(256, channelData.length);
+        for (let i = 0; i < sampleCount; i++) {
           sumPower += channelData[i] * channelData[i];
         }
 
-        if (sumPower > 0.001) {
-          for (let tau = 35; tau <= 190; tau += 2) {
+        if (sumPower > 0.0005) {
+          for (let tau = 35; tau <= 180; tau += 3) {
             let r = 0;
             let p1 = 0;
             let p2 = 0;
-            for (let i = 0; i < 256; i++) {
+            for (let i = 0; i < 128; i++) {
               r += channelData[i] * channelData[i + tau];
               p1 += channelData[i] * channelData[i];
               p2 += channelData[i + tau] * channelData[i + tau];
             }
             const denom = Math.sqrt(p1 * p2);
-            if (denom > 0.0001) {
+            if (denom > 0.00005) {
               const normR = r / denom;
               if (normR > bestR) {
                 bestR = normR;
@@ -213,45 +213,42 @@ export class LiveAudioManager {
           }
         }
 
-        // 4. Dynamic Threshold based on selected Noise Suppression Mode
-        let multiplier = 3.8;
-        let minThreshold = 0.12;
-        let minAutocorrelation = 0.38;
-        let requiredConsecutiveFrames = 2; // ~500ms
+        // 4. Calibrated Voice Thresholds:
+        // Normal conversational human speech is RMS 0.015 - 0.05
+        let multiplier = 1.8;
+        let minThreshold = 0.016;
+        let minAutocorrelation = 0.25;
 
         if (this.noiseMode === "ultra_isolation") {
-          // Ultra Voice Shield: complete rejection of background ambient noise; speaker only
-          multiplier = 4.2;
-          minThreshold = 0.13;
-          minAutocorrelation = 0.40;
-          requiredConsecutiveFrames = 2;
-        } else if (this.noiseMode === "high_rejection") {
-          multiplier = 3.2;
-          minThreshold = 0.09;
-          minAutocorrelation = 0.34;
-          requiredConsecutiveFrames = 2;
-        } else if (this.noiseMode === "balanced") {
           multiplier = 2.4;
-          minThreshold = 0.06;
-          minAutocorrelation = 0.28;
-          requiredConsecutiveFrames = 2;
+          minThreshold = 0.024;
+          minAutocorrelation = 0.30;
+        } else if (this.noiseMode === "high_rejection") {
+          multiplier = 1.9;
+          minThreshold = 0.018;
+          minAutocorrelation = 0.26;
+        } else if (this.noiseMode === "balanced") {
+          multiplier = 1.5;
+          minThreshold = 0.013;
+          minAutocorrelation = 0.20;
         } else if (this.noiseMode === "sensitive") {
-          multiplier = 1.7;
-          minThreshold = 0.035;
-          minAutocorrelation = 0.22;
-          requiredConsecutiveFrames = 1;
+          multiplier = 1.2;
+          minThreshold = 0.009;
+          minAutocorrelation = 0.15;
         }
 
         const dynamicThreshold = Math.max(minThreshold, this.noiseFloor * multiplier);
-        const isVoiceSignal = rms > dynamicThreshold && bestR >= minAutocorrelation;
+        const isVoiceSignal = rms > dynamicThreshold && (bestR >= minAutocorrelation || rms > minThreshold * 2.2);
 
         const snr = rms / Math.max(0.001, this.noiseFloor);
-        this.currentSpeechConfidence = Math.min(1.0, (snr / (multiplier * 2)) * (bestR / minAutocorrelation));
+        this.currentSpeechConfidence = Math.min(1.0, (snr / (multiplier * 2)) * Math.max(0.5, bestR / minAutocorrelation));
 
-        // 5. Voice Activity State Transition
+        // 5. Harmonic Voice Activity State Transition:
+        // Require 2 consecutive frames (~256ms) of harmonic human voice to confirm speech
+        // This eliminates single-frame room transients, drops, coughs, and clatter
         if (isVoiceSignal) {
           this.consecutiveVoiceFrames++;
-          if (this.consecutiveVoiceFrames >= requiredConsecutiveFrames) {
+          if (this.consecutiveVoiceFrames >= 2) {
             this.isSpeechActive = true;
             if (onUserSpeechDetected) {
               onUserSpeechDetected();
@@ -268,14 +265,18 @@ export class LiveAudioManager {
         voiceRecognitionEngine.processAudioFrame(channelData, 16000);
 
         // 7. Dynamic Noise Gate on PCM Stream:
-        // When there is NO verified human voice, stream a silenced buffer so ambient noise never triggers AI
+        // When user speaks, pass full bandpass audio with maximum fidelity.
+        // When silent, attenuate background hiss by 24dB instead of hard digital zeros
         if (this.onAudioChunkCallback) {
-          if (this.isSpeechActive || isVoiceSignal) {
+          if (this.isSpeechActive || isVoiceSignal || rms > minThreshold * 1.1) {
             const base64 = pcm16ToBase64(channelData);
             this.onAudioChunkCallback(base64);
           } else {
-            const silenced = new Float32Array(channelData.length);
-            const base64 = pcm16ToBase64(silenced);
+            const attenuated = new Float32Array(channelData.length);
+            for (let i = 0; i < channelData.length; i++) {
+              attenuated[i] = channelData[i] * 0.06;
+            }
+            const base64 = pcm16ToBase64(attenuated);
             this.onAudioChunkCallback(base64);
           }
         }

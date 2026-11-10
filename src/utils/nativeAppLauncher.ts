@@ -809,34 +809,30 @@ export function buildAndroidIntentUri(target: NativeLaunchTarget): string {
     return "intent://#Intent;package=com.google.android.youtube;scheme=vnd.youtube;end;";
   }
 
-  // Camera
-  if (pkg === "com.android.camera") {
-    return "intent://#Intent;action=android.media.action.STILL_IMAGE_CAMERA;category=android.intent.category.DEFAULT;end;";
+  // Universal System Apps (Camera, Calculator, Settings, Dialer, Alarms, Gallery):
+  // Never hardcode proprietary vendor package names so it works across Samsung, Xiaomi, Pixel, Oppo, Vivo, Realme
+  if (pkg === "com.android.camera" || target.name.toLowerCase() === "camera" || target.hindiName?.includes("कैमरा")) {
+    return "intent:#Intent;action=android.media.action.STILL_IMAGE_CAMERA;end;";
   }
 
-  // Calculator
-  if (pkg === "com.google.android.calculator") {
-    return "intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_CALCULATOR;end;";
+  if (pkg === "com.google.android.calculator" || target.name.toLowerCase() === "calculator" || target.hindiName?.includes("कैलकुलेटर")) {
+    return "intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_CALCULATOR;end;";
   }
 
-  // Settings
-  if (pkg === "com.android.settings") {
-    return "intent://#Intent;action=android.settings.SETTINGS;end;";
+  if (pkg === "com.android.settings" || target.name.toLowerCase() === "settings" || target.hindiName?.includes("सेटिंग्स") || target.hindiName?.includes("सेटिंग")) {
+    return "intent:#Intent;action=android.settings.SETTINGS;end;";
   }
 
-  // Dialer
-  if (pkg === "com.google.android.dialer") {
-    return "intent://#Intent;action=android.intent.action.DIAL;end;";
+  if (pkg === "com.google.android.dialer" || target.name.toLowerCase() === "phone" || target.hindiName?.includes("डायलर")) {
+    return "tel:";
   }
 
-  // Clock
-  if (pkg === "com.google.android.deskclock") {
-    return "intent://#Intent;action=android.intent.action.SHOW_ALARMS;end;";
+  if (pkg === "com.google.android.deskclock" || target.name.toLowerCase() === "clock" || target.hindiName?.includes("अलार्म") || target.hindiName?.includes("घड़ी")) {
+    return "intent:#Intent;action=android.intent.action.SHOW_ALARMS;end;";
   }
 
-  // Gallery
-  if (pkg === "com.google.android.apps.photos") {
-    return "intent://#Intent;action=android.intent.action.VIEW;type=image/*;category=android.intent.category.DEFAULT;end;";
+  if (pkg === "com.google.android.apps.photos" || target.name.toLowerCase() === "gallery" || target.hindiName?.includes("गैलरी")) {
+    return "intent:#Intent;action=android.intent.action.VIEW;type=image/*;end;";
   }
 
   // Generic Android package launcher intent with Google Play fallback
@@ -886,8 +882,17 @@ export function dispatchDirectNativeApp(target: NativeLaunchTarget): void {
 
   console.log("Directly launching real phone app:", target.name, "Primary URI:", primaryUri, "Intent URI:", intentUri);
 
+  // Notify UI for fast-launch floating badge / fallback
   try {
-    // A. Invisible anchor element dispatch
+    window.dispatchEvent(
+      new CustomEvent("avani-native-app-launched", {
+        detail: { target, primaryUri, intentUri },
+      })
+    );
+  } catch (_e) {}
+
+  try {
+    // A. Invisible anchor element dispatch (works without popup blockers)
     const a = document.createElement("a");
     a.href = primaryUri;
     a.rel = "noreferrer";
@@ -900,17 +905,8 @@ export function dispatchDirectNativeApp(target: NativeLaunchTarget): void {
       }
     }, 500);
 
-    // B. Direct window.location.href assignment (the #1 proven method that opens YouTube & Android OS apps)
+    // B. Direct window.location.href assignment (proven method that opens YouTube & OS apps)
     window.location.href = primaryUri;
-
-    // C. If primary was a custom scheme and browser didn't leave, also queue the Android Intent
-    if (primaryUri !== intentUri && intentUri.startsWith("intent:")) {
-      setTimeout(() => {
-        try {
-          window.location.assign(intentUri);
-        } catch (_e) {}
-      }, 400);
-    }
   } catch (err) {
     console.warn("Direct intent launch notice:", err);
     try {

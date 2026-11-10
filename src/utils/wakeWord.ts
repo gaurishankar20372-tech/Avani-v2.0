@@ -89,11 +89,11 @@ export class WakeWordDetector {
           return;
         }
 
-        // Switch language mode on idle/no-speech to catch cross-lingual utterances
+        // Do not switch language away from hi-IN; hi-IN handles bilingual Hindi and English apps natively
         if (e.error === "no-speech") {
-          this.currentLangIndex = (this.currentLangIndex + 1) % this.supportedLangs.length;
+          // Keep recognition alive on hi-IN
           if (this.recognition) {
-            this.recognition.lang = this.supportedLangs[this.currentLangIndex];
+            this.recognition.lang = "hi-IN";
           }
         }
       };
@@ -111,7 +111,7 @@ export class WakeWordDetector {
                   this.recognition.start();
                 } catch {}
               }
-            }, 250);
+            }, 100);
           }
         }
       };
