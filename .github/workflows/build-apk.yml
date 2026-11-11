@@ -1,0 +1,242 @@
+name: Avani 2.0 Final APK Builder
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avani-android-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Avani 2.0 Android APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Verify Environment
+        run: |
+          node --version
+          bun --version
+          java -version
+          javac -version
+
+      - name: Verify Project
+        shell: bash
+        run: |
+          set -e
+
+          echo "Checking project files..."
+
+          test -s package.json
+          test -s index.html
+          test -s vite.config.ts
+          test -s server.ts
+
+          node -e "
+            const p = require('./package.json');
+            if (!p.scripts || !p.scripts.build) {
+              throw new Error('Build script missing');
+            }
+            console.log('Build script:', p.scripts.build);
+          "
+
+          echo "Project verification successful"
+
+      - name: Install Dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Capacitor
+        run: |
+          bun add @capacitor/core@7
+          bun add @capacitor/android@7
+          bun add -d @capacitor/cli@7
+
+      - name: Create Avani Logo
+        run: |
+          python3 -m pip install Pillow
+
+          python3 <<'PY'
+          from PIL import Image, ImageDraw
+          import os
+
+          S = 1024
+          bg = (247, 250, 252, 255)
+          teal = (0, 159, 145, 255)
+
+          image = Image.new("RGBA", (S, S), bg)
+          draw = ImageDraw.Draw(image)
+
+          petals = [
+              [(512, 95), (620, 420), (512, 540), (404, 420)],
+              [(230, 210), (470, 360), (440, 560), (260, 480)],
+              [(794, 210), (554, 360), (584, 560), (764, 480)],
+              [(110, 460), (400, 470), (420, 630), (180, 650)],
+              [(914, 460), (624, 470), (604, 630), (844, 650)],
+              [(250, 700), (460, 570), (512, 780), (400, 900)],
+              [(774, 700), (564, 570), (512, 780), (624, 900)]
+          ]
+
+          for points in petals:
+              draw.polygon(points, fill=teal)
+
+          draw.ellipse((425, 425, 599, 599), fill=bg)
+
+          draw.line((512, 170, 512, 425), fill=bg, width=17)
+          draw.line((300, 390, 425, 390), fill=bg, width=17)
+          draw.line((150, 530, 300, 530), fill=bg, width=17)
+
+          for x, y, r in [
+              (512, 170, 28),
+              (300, 390, 23),
+              (150, 530, 20)
+          ]:
+              draw.ellipse(
+                  (x-r, y-r, x+r, y+r),
+                  fill=bg
+              )
+
+          os.makedirs("resources", exist_ok=True)
+          image.save("resources/avani-logo.png")
+
+          print("Avani logo generated")
+          PY
+
+      - name: Configure Capacitor
+        run: |
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.mgshankar.avani",
+            "appName": "Avani 2.0",
+            "webDir": "dist",
+            "backgroundColor": "#F7FAFC",
+            "androidScheme": "https"
+          }
+          EOF
+
+      - name: Build Web Application
+        run: bun run build
+
+      - name: Verify Web Build
+        run: |
+          test -s dist/index.html
+          echo "Web build successful"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      - name: Verify Android SDK
+        run: |
+          sdkmanager --version
+          adb version
+
+      - name: Generate Android Project
+        run: |
+          if [ ! -d android ]; then
+            bunx cap add android
+          fi
+
+      - name: Sync Android
+        run: bunx cap sync android
+
+      - name: Generate Android Icons
+        run: |
+          python3 <<'PY'
+          from PIL import Image
+          from pathlib import Path
+
+          source = Image.open(
+              "resources/avani-logo.png"
+          ).convert("RGBA")
+
+          res = Path("android/app/src/main/res")
+
+          sizes = {
+              "mdpi": 48,
+              "hdpi": 72,
+              "xhdpi": 96,
+              "xxhdpi": 144,
+              "xxxhdpi": 192
+          }
+
+          for density, size in sizes.items():
+              folder = res / f"mipmap-{density}"
+              folder.mkdir(parents=True, exist_ok=True)
+
+              icon = source.resize(
+                  (size, size),
+                  Image.Resampling.LANCZOS
+              )
+
+              icon.save(folder / "ic_launcher.png")
+              icon.save(folder / "ic_launcher_round.png")
+
+          print("Android icons generated")
+          PY
+
+      - name: Verify Android Project
+        run: |
+          test -f android/gradlew
+          test -d android/app/src/main
+
+      - name: Build Debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace
+
+      - name: Verify APK
+        run: |
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+
+          test -s "$APK"
+
+          echo "APK BUILD SUCCESSFUL"
+
+          ls -lh "$APK"
+
+      - name: Upload Avani APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Avani-2.0-Android-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Build Summary
+        if: success()
+        run: |
+          echo "Avani 2.0 APK BUILD SUCCESSFUL"
+          echo "Package: com.mgshankar.avani"
+          echo "Java: 21"
+          echo "Android SDK: 35"
