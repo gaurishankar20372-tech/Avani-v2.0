@@ -1,7 +1,8 @@
-name: Build Avani 2.0 APK
+name: Avani 2.0 APK Build
 
 on:
   workflow_dispatch:
+
   push:
     branches:
       - main
@@ -12,69 +13,97 @@ permissions:
 
 jobs:
   build:
-    name: Build Avani 2.0 APK
-    runs-on: ubuntu-latest
+    name: Avani Android APK
+    runs-on: ubuntu-24.04
 
     steps:
+
+      # 1. Download Source Code
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # 2. Setup Node
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
-      - name: Setup Java
+      # 3. Setup Java
+      - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
-          distribution: zulu
+          distribution: temurin
           java-version: 21
 
+      # 4. Setup Android SDK
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # 5. Install Project Dependencies
       - name: Install Dependencies
         run: npm install
 
+      # 6. Check Capacitor
       - name: Install Capacitor
         run: |
           npm install @capacitor/core @capacitor/android
-          npm install --save-dev @capacitor/cli
+          npm install -D @capacitor/cli
 
+      # 7. Build Web App
       - name: Build Web Application
         run: npm run build
 
-      - name: Check Web Build
+      # 8. Verify Build
+      - name: Verify Web Files
         run: |
-          if [ ! -f dist/index.html ]; then
-            echo "ERROR: dist/index.html not found"
+          test -f dist/index.html || {
+            echo "Web build output missing!"
             exit 1
-          fi
+          }
 
-      - name: Setup Capacitor
+      # 9. Configure Capacitor
+      - name: Configure Capacitor
         run: |
           if [ ! -f capacitor.config.ts ] && \
-             [ ! -f capacitor.config.json ] && \
-             [ ! -f capacitor.config.js ]; then
-            npx cap init "Avani 2.0" "com.mgshankar.avani" --web-dir=dist
+             [ ! -f capacitor.config.js ] && \
+             [ ! -f capacitor.config.json ]; then
+            npx cap init "Avani 2.0" \
+              "com.mgshankar.avani" \
+              --web-dir dist
           fi
 
-      - name: Add Android Platform
+      # 10. Create Android Platform
+      - name: Create Android Platform
         run: |
           if [ ! -d android ]; then
             npx cap add android
           fi
 
+      # 11. Sync Android
       - name: Sync Android
         run: npx cap sync android
 
+      # 12. Configure Gradle
+      - name: Configure Gradle
+        run: |
+          mkdir -p android
+          echo "org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g" >> android/gradle.properties
+          echo "org.gradle.parallel=true" >> android/gradle.properties
+          echo "org.gradle.caching=true" >> android/gradle.properties
+
+      # 13. Build Debug APK
       - name: Build APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --stacktrace
 
+      # 14. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Avani-2.0-APK
+          name: Avani-2.0-Android-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
