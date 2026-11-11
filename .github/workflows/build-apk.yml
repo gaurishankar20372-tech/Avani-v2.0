@@ -24,10 +24,18 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Project Dependencies & Build Web Assets
+      - name: Install Dependencies and Build Web App
         run: |
-          npm install
-          npm run build
+          if [ -f "bun.lock" ] || [ -f "bun.lockb" ]; then
+            echo "Using Bun package manager..."
+            npm install -g bun
+            bun install
+            bun run build
+          else
+            echo "Using npm package manager..."
+            npm install
+            npm run build
+          fi
 
       - name: Sync Capacitor Android Platform
         run: |
