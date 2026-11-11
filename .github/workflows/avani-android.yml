@@ -1,0 +1,189 @@
+name: Avani 2.0 Complete Android Builder
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avani-android-build
+  cancel-in-progress: false
+
+jobs:
+
+  android-build:
+
+    name: Build Avani 2.0 APK
+
+    runs-on: ubuntu-24.04
+
+    timeout-minutes: 45
+
+    steps:
+
+      # STEP 1: Get Source Code
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # STEP 2: Node.js
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # STEP 3: Java
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # STEP 4: Android SDK
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # STEP 5: Install SDK Components
+
+      - name: Install Android Components
+        run: |
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      # STEP 6: Verify Project
+
+      - name: Verify Avani Project
+        run: |
+          echo "Checking Avani project..."
+
+          test -f package.json
+          test -f vite.config.ts
+          test -f server.ts
+
+          echo "Project files verified."
+
+      # STEP 7: Install Dependencies
+
+      - name: Install Project Dependencies
+        run: |
+          npm install --no-audit --no-fund
+
+      # STEP 8: Install Capacitor
+
+      - name: Install Capacitor 7
+        run: |
+          npm install --save-exact \
+            @capacitor/core@7 \
+            @capacitor/android@7
+
+          npm install --save-dev --save-exact \
+            @capacitor/cli@7
+
+      # STEP 9: Verify Capacitor
+
+      - name: Verify Capacitor
+        run: |
+          npx cap --version
+
+      # STEP 10: Build Avani Web Application
+
+      - name: Build Avani Web Application
+        run: |
+          npm run build
+
+      # STEP 11: Verify Web Build
+
+      - name: Verify Web Output
+        run: |
+          test -f dist/index.html
+          echo "Avani Web Application Ready"
+
+      # STEP 12: Create Capacitor Configuration
+
+      - name: Configure Avani Android
+        run: |
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.mgshankar.avani",
+            "appName": "Avani 2.0",
+            "webDir": "dist",
+            "backgroundColor": "#080B14",
+            "android": {
+              "allowMixedContent": false
+            }
+          }
+          EOF
+
+      # STEP 13: Create Android Project
+
+      - name: Generate Android Project
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+
+      # STEP 14: Sync Web Application
+
+      - name: Sync Android Application
+        run: |
+          npx cap sync android
+
+      # STEP 15: Verify Android Project
+
+      - name: Verify Android Project
+        run: |
+          test -f android/gradlew
+          test -f android/app/build.gradle || \
+          test -f android/app/build.gradle.kts
+
+          echo "Android project ready."
+
+      # STEP 16: Build Debug APK
+
+      - name: Compile Avani APK
+        run: |
+          cd android
+
+          chmod +x gradlew
+
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace
+
+      # STEP 17: Verify APK
+
+      - name: Verify APK File
+        run: |
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -s "$APK" ]; then
+            echo "APK generation failed."
+            exit 1
+          fi
+
+          ls -lh "$APK"
+
+      # STEP 18: Upload APK
+
+      - name: Upload Avani 2.0 APK
+        uses: actions/upload-artifact@v4
+
+        with:
+          name: AVANI-2.0-ANDROID-APK
+
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+          if-no-files-found: error
+
+          retention-days: 30
