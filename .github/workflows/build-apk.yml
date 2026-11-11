@@ -37,6 +37,10 @@ jobs:
             npm run build
           fi
 
+      - name: Install Capacitor CLI & Core
+        run: |
+          npm install @capacitor/cli @capacitor/core @capacitor/android
+
       - name: Sync Capacitor Android Platform
         run: |
           npx cap sync android
