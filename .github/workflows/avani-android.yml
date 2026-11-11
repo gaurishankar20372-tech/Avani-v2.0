@@ -1,70 +1,137 @@
-name: Build Avani-v2.0 APK
+name: Avani 2.0 APK Production Builder
 
 on:
   workflow_dispatch:
+
   push:
-    branches: [ "main", "master" ]
+    branches:
+      - main
+
+permissions:
+  contents: read
 
 jobs:
-  build-apk:
-    runs-on: ubuntu-latest
+
+  build:
+
+    name: Avani Android APK
+
+    runs-on: ubuntu-24.04
+
+    timeout-minutes: 45
 
     steps:
-      - name: Checkout Repository
+
+      # STEP 1
+      - name: Checkout Source
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 18
+      # STEP 2
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
-      - name: Set up Java JDK 17
+      # STEP 3
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      # STEP 4
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
 
-      - name: Install Bun and Project Dependencies
-        run: |
-          npm install -g bun
-          bun install
-          bun run build
+      # STEP 5
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Initialize Capacitor and Add Android Platform
+      # STEP 6
+      - name: Install Android SDK Components
         run: |
-          # Capacitor और एंड्रॉइड पैकेज इंस्टॉल करें
-          bun add @capacitor/core @capacitor/cli @capacitor/android
-          
-          # अगर capacitor.config.ts नहीं है, तो इसे ऑटो-क्रिएट करें
-          if [ ! -f "capacitor.config.ts" ]; then
-            echo "Creating capacitor.config.ts..."
-            npx cap init "Avani" "com.avani.app" --web-dir dist --yes
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      # STEP 7
+      - name: Verify Project
+        run: |
+          test -f package.json
+          test -f bun.lock
+          test -f server.ts
+          test -f vite.config.ts
+
+      # STEP 8
+      - name: Install Dependencies
+        run: bun install
+
+      # STEP 9
+      - name: Install Capacitor
+        run: |
+          bun add @capacitor/core@7
+          bun add @capacitor/android@7
+          bun add -d @capacitor/cli@7
+
+      # STEP 10
+      - name: Configure Capacitor
+        run: |
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.mgshankar.avani",
+            "appName": "Avani 2.0",
+            "webDir": "dist",
+            "backgroundColor": "#080B14"
+          }
+          EOF
+
+      # STEP 11
+      - name: Build Avani Web Application
+        run: bun run build
+
+      # STEP 12
+      - name: Verify Web Build
+        run: |
+          test -f dist/index.html
+          test -f dist/server.cjs
+
+      # STEP 13
+      - name: Generate Android Project
+        run: |
+          if [ ! -d android ]; then
+            bunx cap add android
           fi
 
-          # अगर android फोल्डर नहीं है, तो उसे जोड़ें
-          if [ ! -d "android" ]; then
-            echo "Adding android platform..."
-            npx cap add android
-          else
-            echo "Android folder already exists."
-          fi
+      # STEP 14
+      - name: Sync Android
+        run: bunx cap sync android
 
-          # सिंक करें
-          npx cap sync android
+      # STEP 15
+      - name: Verify Android
+        run: |
+          test -f android/gradlew
+          test -d android/app
 
-      - name: Make Gradle Wrapper Executable
+      # STEP 16
+      - name: Build Debug APK
         run: |
           cd android
           chmod +x gradlew
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace
 
-      - name: Clean and Build Debug APK
+      # STEP 17
+      - name: Verify APK
         run: |
-          cd android
-          ./gradlew clean assembleDebug
+          test -s android/app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload APK Artifact
+      # STEP 18
+      - name: Upload Avani APK
         uses: actions/upload-artifact@v4
         with:
-          name: avani-debug-apk
+          name: Avani-2.0-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 7
+          if-no-files-found: error
+          retention-days: 30
