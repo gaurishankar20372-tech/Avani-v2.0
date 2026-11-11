@@ -1,4 +1,4 @@
-name: Avani 2.0 APK Production Builder
+name: Avani 2.0 APK Builder
 
 on:
   workflow_dispatch:
@@ -11,70 +11,76 @@ permissions:
   contents: read
 
 jobs:
-
   build:
-
-    name: Avani Android APK
-
+    name: Build Avani 2.0 Android APK
     runs-on: ubuntu-24.04
-
     timeout-minutes: 45
 
     steps:
 
-      # STEP 1
+      # 1. Checkout Repository
       - name: Checkout Source
         uses: actions/checkout@v4
 
-      # STEP 2
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
-      # STEP 3
+      # 3. Setup Bun
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
-      # STEP 4
+      # 4. Setup Java
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # STEP 5
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      # STEP 6
-      - name: Install Android SDK Components
+      # 5. Verify Environment
+      - name: Verify Environment
         run: |
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+          node --version
+          bun --version
+          java -version
 
-      # STEP 7
+      # 6. Setup Android SDK
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools platforms;android-35 build-tools;35.0.0
+
+      # 7. Verify Android SDK
+      - name: Verify Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          sdkmanager --version
+          adb version
+
+      # 8. Verify Project Files
       - name: Verify Project
         run: |
           test -f package.json
           test -f bun.lock
-          test -f server.ts
           test -f vite.config.ts
+          test -f index.html
 
-      # STEP 8
+      # 9. Install Dependencies
       - name: Install Dependencies
         run: bun install
 
-      # STEP 9
+      # 10. Install Capacitor
       - name: Install Capacitor
         run: |
           bun add @capacitor/core@7
           bun add @capacitor/android@7
           bun add -d @capacitor/cli@7
 
-      # STEP 10
+      # 11. Configure Capacitor
       - name: Configure Capacitor
         run: |
           cat > capacitor.config.json <<'EOF'
@@ -86,49 +92,50 @@ jobs:
           }
           EOF
 
-      # STEP 11
+      # 12. Build Web Application
       - name: Build Avani Web Application
         run: bun run build
 
-      # STEP 12
+      # 13. Verify Web Build
       - name: Verify Web Build
         run: |
-          test -f dist/index.html
-          test -f dist/server.cjs
+          test -s dist/index.html
+          echo "Web build successful"
 
-      # STEP 13
+      # 14. Generate Android Project
       - name: Generate Android Project
         run: |
           if [ ! -d android ]; then
             bunx cap add android
           fi
 
-      # STEP 14
+      # 15. Sync Android Project
       - name: Sync Android
         run: bunx cap sync android
 
-      # STEP 15
+      # 16. Verify Android Project
       - name: Verify Android
         run: |
           test -f android/gradlew
-          test -d android/app
+          test -d android/app/src/main
+          echo "Android project verified"
 
-      # STEP 16
+      # 17. Build Debug APK
       - name: Build Debug APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug \
-            --no-daemon \
-            --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
-      # STEP 17
+      # 18. Verify APK
       - name: Verify APK
         run: |
-          test -s android/app/build/outputs/apk/debug/app-debug.apk
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          ls -lh "$APK"
 
-      # STEP 18
-      - name: Upload Avani APK
+      # 19. Upload APK
+      - name: Upload Avani 2.0 APK
         uses: actions/upload-artifact@v4
         with:
           name: Avani-2.0-APK
