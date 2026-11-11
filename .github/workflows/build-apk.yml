@@ -24,25 +24,32 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Dependencies and Build Web App
+      - name: Install Project Dependencies & Build Web App
         run: |
           if [ -f "bun.lock" ] || [ -f "bun.lockb" ]; then
-            echo "Using Bun package manager..."
+            echo "Using Bun..."
             npm install -g bun
             bun install
             bun run build
           else
-            echo "Using npm package manager..."
+            echo "Using npm..."
             npm install
             npm run build
           fi
 
       - name: Install Capacitor CLI & Core
         run: |
-          npm install @capacitor/cli @capacitor/core @capacitor/android
+          npm install @capacitor/core @capacitor/cli @capacitor/android
 
-      - name: Sync Capacitor Android Platform
+      - name: Add and Sync Android Platform Automatically
         run: |
+          # चेक करेगा कि android फोल्डर है या नहीं, अगर नहीं है तो खुद जोड़ देगा
+          if [ ! -d "android" ]; then
+            echo "Android platform missing. Adding it now..."
+            npx cap add android
+          else
+            echo "Android platform already exists."
+          fi
           npx cap sync android
 
       - name: Make Gradle Wrapper Executable
