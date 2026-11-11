@@ -1,189 +1,70 @@
-name: Avani 2.0 Complete Android Builder
+name: Build Avani-v2.0 APK
 
 on:
   workflow_dispatch:
-
   push:
-    branches:
-      - main
-      - master
-
-permissions:
-  contents: read
-
-concurrency:
-  group: avani-android-build
-  cancel-in-progress: false
+    branches: [ "main", "master" ]
 
 jobs:
-
-  android-build:
-
-    name: Build Avani 2.0 APK
-
-    runs-on: ubuntu-24.04
-
-    timeout-minutes: 45
+  build-apk:
+    runs-on: ubuntu-latest
 
     steps:
-
-      # STEP 1: Get Source Code
-
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # STEP 2: Node.js
-
-      - name: Setup Node.js
+      - name: Set up Node.js 18
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 18
 
-      # STEP 3: Java
-
-      - name: Setup Java 17
+      - name: Set up Java JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '17'
 
-      # STEP 4: Android SDK
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      # STEP 5: Install SDK Components
-
-      - name: Install Android Components
+      - name: Install Bun and Project Dependencies
         run: |
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+          npm install -g bun
+          bun install
+          bun run build
 
-      # STEP 6: Verify Project
-
-      - name: Verify Avani Project
+      - name: Initialize Capacitor and Add Android Platform
         run: |
-          echo "Checking Avani project..."
-
-          test -f package.json
-          test -f vite.config.ts
-          test -f server.ts
-
-          echo "Project files verified."
-
-      # STEP 7: Install Dependencies
-
-      - name: Install Project Dependencies
-        run: |
-          npm install --no-audit --no-fund
-
-      # STEP 8: Install Capacitor
-
-      - name: Install Capacitor 7
-        run: |
-          npm install --save-exact \
-            @capacitor/core@7 \
-            @capacitor/android@7
-
-          npm install --save-dev --save-exact \
-            @capacitor/cli@7
-
-      # STEP 9: Verify Capacitor
-
-      - name: Verify Capacitor
-        run: |
-          npx cap --version
-
-      # STEP 10: Build Avani Web Application
-
-      - name: Build Avani Web Application
-        run: |
-          npm run build
-
-      # STEP 11: Verify Web Build
-
-      - name: Verify Web Output
-        run: |
-          test -f dist/index.html
-          echo "Avani Web Application Ready"
-
-      # STEP 12: Create Capacitor Configuration
-
-      - name: Configure Avani Android
-        run: |
-          cat > capacitor.config.json <<'EOF'
-          {
-            "appId": "com.mgshankar.avani",
-            "appName": "Avani 2.0",
-            "webDir": "dist",
-            "backgroundColor": "#080B14",
-            "android": {
-              "allowMixedContent": false
-            }
-          }
-          EOF
-
-      # STEP 13: Create Android Project
-
-      - name: Generate Android Project
-        run: |
-          if [ ! -d android ]; then
-            npx cap add android
+          # Capacitor और एंड्रॉइड पैकेज इंस्टॉल करें
+          bun add @capacitor/core @capacitor/cli @capacitor/android
+          
+          # अगर capacitor.config.ts नहीं है, तो इसे ऑटो-क्रिएट करें
+          if [ ! -f "capacitor.config.ts" ]; then
+            echo "Creating capacitor.config.ts..."
+            npx cap init "Avani" "com.avani.app" --web-dir dist --yes
           fi
 
-      # STEP 14: Sync Web Application
+          # अगर android फोल्डर नहीं है, तो उसे जोड़ें
+          if [ ! -d "android" ]; then
+            echo "Adding android platform..."
+            npx cap add android
+          else
+            echo "Android folder already exists."
+          fi
 
-      - name: Sync Android Application
-        run: |
+          # सिंक करें
           npx cap sync android
 
-      # STEP 15: Verify Android Project
-
-      - name: Verify Android Project
-        run: |
-          test -f android/gradlew
-          test -f android/app/build.gradle || \
-          test -f android/app/build.gradle.kts
-
-          echo "Android project ready."
-
-      # STEP 16: Build Debug APK
-
-      - name: Compile Avani APK
+      - name: Make Gradle Wrapper Executable
         run: |
           cd android
-
           chmod +x gradlew
 
-          ./gradlew assembleDebug \
-            --no-daemon \
-            --stacktrace
-
-      # STEP 17: Verify APK
-
-      - name: Verify APK File
+      - name: Clean and Build Debug APK
         run: |
-          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          cd android
+          ./gradlew clean assembleDebug
 
-          if [ ! -s "$APK" ]; then
-            echo "APK generation failed."
-            exit 1
-          fi
-
-          ls -lh "$APK"
-
-      # STEP 18: Upload APK
-
-      - name: Upload Avani 2.0 APK
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
-
         with:
-          name: AVANI-2.0-ANDROID-APK
-
+          name: avani-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
-
-          if-no-files-found: error
-
-          retention-days: 30
+          retention-days: 7
