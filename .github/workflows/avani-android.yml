@@ -1,4 +1,4 @@
-name: Avani 2.0 APK Production Builder
+name: Avani 2.0 - Android APK Builder
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build:
-    name: Avani 2.0 Android APK
+    name: Build Avani 2.0 Android APK
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -38,47 +38,145 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: gradle
 
-      # 5. Verify Environment
-      - name: Verify Environment
-        run: |
-          node --version
-          bun --version
-          java -version
-
-      # 6. Setup Android SDK
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: platform-tools platforms;android-35 build-tools;35.0.0
-
-      # 7. Verify Android SDK
-      - name: Verify Android SDK
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          sdkmanager --version
-          adb version
-
-      # 8. Verify Project
+      # 5. Verify Project
       - name: Verify Project
+        shell: bash
         run: |
-          test -f package.json
-          test -f index.html
-          test -f vite.config.ts
-          test -f assets/avani-logo.png
+          echo "Checking Avani project..."
 
-      # 9. Install Dependencies
+          echo "Current directory:"
+          pwd
+
+          echo "Project files:"
+          ls -la
+
+          REQUIRED_FILES=(
+            "package.json"
+            "index.html"
+            "server.ts"
+            "vite.config.ts"
+            "src/main.tsx"
+            "src/App.tsx"
+          )
+
+          for FILE in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$FILE" ]; then
+              echo "ERROR: Missing file: $FILE"
+              exit 1
+            fi
+            echo "OK: $FILE"
+          done
+
+          if [ ! -f bun.lock ] && [ ! -f bun.lockb ]; then
+            echo "WARNING: Bun lockfile not found."
+          fi
+
+          echo "PROJECT VERIFICATION SUCCESSFUL"
+
+      # 6. Verify Java
+      - name: Verify Java
+        run: |
+          java -version
+          javac -version
+          echo "JAVA_HOME=$JAVA_HOME"
+
+      # 7. Install Dependencies
       - name: Install Dependencies
-        run: bun install
+        run: |
+          bun install
 
-      # 10. Install Capacitor
+      # 8. Install Capacitor
       - name: Install Capacitor
         run: |
-          bun add @capacitor/core@7
-          bun add @capacitor/android@7
-          bun add -d @capacitor/cli@7
+          bun add @capacitor/core@7 @capacitor/android@7
+          bun add -d @capacitor/cli@7 @capacitor/assets
 
-      # 11. Configure Capacitor
+      # 9. Create Avani Logo
+      - name: Create Avani Logo
+        run: |
+          mkdir -p resources
+
+          cat > resources/logo.svg <<'EOF'
+          <svg xmlns="http://www.w3.org/2000/svg"
+               width="1024" height="1024"
+               viewBox="0 0 1024 1024">
+
+            <rect width="1024" height="1024"
+                  fill="#F7FAFC"/>
+
+            <g fill="#009F91"
+               stroke="#F7FAFC"
+               stroke-width="13"
+               stroke-linejoin="round">
+
+              <path d="M512 100
+                       C600 175 625 290 590 420
+                       C560 500 535 540 512 565
+                       C489 540 464 500 434 420
+                       C399 290 424 175 512 100Z"/>
+
+              <path d="M230 195
+                       C340 190 430 260 450 370
+                       C465 465 430 545 390 590
+                       C300 520 230 390 230 195Z"/>
+
+              <path d="M794 195
+                       C684 190 594 260 574 370
+                       C559 465 594 545 634 590
+                       C724 520 794 390 794 195Z"/>
+
+              <path d="M125 420
+                       C245 410 345 485 385 590
+                       C320 660 210 670 100 590
+                       C55 555 55 465 125 420Z"/>
+
+              <path d="M899 420
+                       C779 410 679 485 639 590
+                       C704 660 814 670 924 590
+                       C969 555 969 465 899 420Z"/>
+
+              <path d="M250 640
+                       C330 565 430 580 480 665
+                       C455 770 350 830 245 790
+                       C190 765 195 690 250 640Z"/>
+
+              <path d="M774 640
+                       C694 565 594 580 544 665
+                       C569 770 674 830 779 790
+                       C834 765 829 690 774 640Z"/>
+
+              <path d="M512 650
+                       C590 685 625 780 512 900
+                       C399 780 434 685 512 650Z"/>
+
+            </g>
+
+            <g fill="#F7FAFC">
+              <circle cx="512" cy="245" r="34"/>
+              <circle cx="355" cy="405" r="25"/>
+              <circle cx="180" cy="520" r="20"/>
+              <circle cx="512" cy="650" r="76"/>
+            </g>
+
+            <g stroke="#F7FAFC"
+               stroke-width="15"
+               stroke-linecap="round"
+               fill="none">
+
+              <path d="M512 280 L512 590"/>
+              <path d="M355 405 L405 405"/>
+              <path d="M180 520 L260 520"/>
+
+            </g>
+
+          </svg>
+          EOF
+
+          echo "Avani logo created."
+
+      # 10. Create Capacitor Configuration
       - name: Configure Capacitor
         run: |
           cat > capacitor.config.json <<'EOF'
@@ -86,174 +184,116 @@ jobs:
             "appId": "com.mgshankar.avani",
             "appName": "Avani 2.0",
             "webDir": "dist",
-            "backgroundColor": "#FFFFFF"
+            "backgroundColor": "#F7FAFC",
+            "androidScheme": "https"
           }
           EOF
 
-      # 12. Build Web Application
+      # 11. Build Web Application
       - name: Build Avani Web Application
-        run: bun run build
+        run: |
+          bun run build
 
-      # 13. Verify Web Build
+      # 12. Verify Web Application
       - name: Verify Web Build
         run: |
           test -s dist/index.html
-          echo "Web build successful"
+          test -s dist/server.cjs
 
-      # 14. Generate Android Project
+          echo "WEB BUILD SUCCESSFUL"
+
+      # 13. Setup Android SDK
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # 14. Install Android SDK Components
+      - name: Install Android SDK Components
+        run: |
+          yes | sdkmanager --licenses || true
+
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      # 15. Generate Android Project
       - name: Generate Android Project
         run: |
-          if [ ! -d android ]; then
-            bunx cap add android
-          fi
-
-      # 15. Sync Android
-      - name: Sync Android
-        run: bunx cap sync android
+          bunx cap add android
 
       # 16. Generate Avani App Icons
       - name: Generate Avani App Icons
         run: |
-          python3 -m venv .icon-env
-          .icon-env/bin/pip install Pillow
+          bunx capacitor-assets generate \
+            --android \
+            --assetPath resources \
+            --iconBackgroundColor "#F7FAFC" \
+            --splashBackgroundColor "#F7FAFC"
 
-          .icon-env/bin/python <<'PY'
-          from PIL import Image
-          from pathlib import Path
-
-          source = Image.open(
-              "assets/avani-logo.png"
-          ).convert("RGBA")
-
-          res = Path("android/app/src/main/res")
-
-          sizes = {
-              "mdpi": 48,
-              "hdpi": 72,
-              "xhdpi": 96,
-              "xxhdpi": 144,
-              "xxxhdpi": 192
-          }
-
-          for density, size in sizes.items():
-              folder = res / f"mipmap-{density}"
-              folder.mkdir(parents=True, exist_ok=True)
-
-              icon = source.copy()
-              icon.thumbnail(
-                  (size, size),
-                  Image.Resampling.LANCZOS
-              )
-
-              canvas = Image.new(
-                  "RGBA",
-                  (size, size),
-                  (255, 255, 255, 255)
-              )
-
-              x = (size - icon.width) // 2
-              y = (size - icon.height) // 2
-
-              canvas.alpha_composite(icon, (x, y))
-
-              canvas.save(folder / "ic_launcher.png")
-              canvas.save(folder / "ic_launcher_round.png")
-
-          # Adaptive foreground
-          folder = res / "drawable-nodpi"
-          folder.mkdir(parents=True, exist_ok=True)
-
-          foreground = Image.new(
-              "RGBA",
-              (432, 432),
-              (0, 0, 0, 0)
-          )
-
-          logo = source.copy()
-          logo.thumbnail(
-              (270, 270),
-              Image.Resampling.LANCZOS
-          )
-
-          x = (432 - logo.width) // 2
-          y = (432 - logo.height) // 2
-
-          foreground.alpha_composite(logo, (x, y))
-
-          foreground.save(
-              folder / "avani_icon_foreground.png"
-          )
-
-          # Adaptive icon XML
-          folder = res / "mipmap-anydpi-v26"
-          folder.mkdir(parents=True, exist_ok=True)
-
-          xml = '''<?xml version="1.0" encoding="utf-8"?>
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@color/avani_icon_background"/>
-              <foreground android:drawable="@drawable/avani_icon_foreground"/>
-          </adaptive-icon>
-          '''
-
-          (folder / "ic_launcher.xml").write_text(xml)
-          (folder / "ic_launcher_round.xml").write_text(xml)
-
-          # Background color
-          folder = res / "values"
-          folder.mkdir(parents=True, exist_ok=True)
-
-          colors = '''<?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <color name="avani_icon_background">#FFFFFF</color>
-          </resources>
-          '''
-
-          (folder / "avani_icon_colors.xml").write_text(colors)
-
-          print("Avani icons generated successfully!")
-          PY
-
-      # 17. Verify Icons
-      - name: Verify App Icons
+      # 17. Sync Android
+      - name: Sync Android
         run: |
-          test -s android/app/src/main/res/mipmap-hdpi/ic_launcher.png
-          test -s android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-          test -s android/app/src/main/res/drawable-nodpi/avani_icon_foreground.png
+          bunx cap sync android
 
-      # 18. Verify Android
+      # 18. Verify Android Project
       - name: Verify Android Project
         run: |
           test -f android/gradlew
+          test -f android/app/build.gradle
           test -d android/app/src/main
 
-      # 19. Build Debug APK
-      - name: Build Debug APK
+          echo "ANDROID PROJECT VERIFIED"
+
+      # 19. Clean Previous Build
+      - name: Clean Android Build
         run: |
           cd android
           chmod +x gradlew
+          ./gradlew clean --no-daemon
 
-          java -version
+      # 20. Build Debug APK
+      - name: Build Debug APK
+        run: |
+          cd android
 
           ./gradlew assembleDebug \
             --no-daemon \
-            --stacktrace
+            --stacktrace \
+            --warning-mode all
 
-      # 20. Verify APK
+      # 21. Verify APK
       - name: Verify APK
         run: |
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
 
-          test -s "$APK"
+          if [ ! -s "$APK" ]; then
+            echo "APK NOT FOUND"
+            exit 1
+          fi
 
-          echo "APK CREATED SUCCESSFULLY"
+          echo "APK BUILD SUCCESSFUL"
 
           ls -lh "$APK"
 
-      # 21. Upload APK
+      # 22. Upload APK
       - name: Upload Avani 2.0 APK
         uses: actions/upload-artifact@v4
         with:
-          name: Avani-2.0-APK
+          name: Avani-2.0-Android-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      # 23. Build Summary
+      - name: Build Summary
+        if: success()
+        run: |
+          echo "================================"
+          echo "AVANI 2.0 APK BUILD SUCCESSFUL"
+          echo "================================"
+          echo "Application: Avani 2.0"
+          echo "Package: com.mgshankar.avani"
+          echo "Java: 21"
+          echo "Platform: Android"
+          echo "Build: Debug APK"
+          echo "================================"
